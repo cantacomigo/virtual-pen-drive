@@ -131,7 +131,7 @@ CREATE POLICY "Admins can delete albums" ON public.albums FOR DELETE TO authenti
       .select(`
         id, name, artist_name, album_name, audio_url, format, duration, created_at, genre, year, track_image,
         album_id,
-        albums!fk_album(image_url)
+        albums(image_url)
       `)
       .eq('user_id', currentUser.id) // Busca faixas onde o dono é o admin atual
       .order('created_at', { ascending: false });

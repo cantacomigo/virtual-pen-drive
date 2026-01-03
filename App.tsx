@@ -87,7 +87,7 @@ const App: React.FC = () => {
         .select(`
           id, name, artist_name, album_name, audio_url, format, duration, created_at, genre, year, track_image,
           album_id,
-          albums!fk_album(image_url)
+          albums(image_url)
         `);
       
       if (currentUser.role !== 'admin') {
@@ -186,7 +186,7 @@ const App: React.FC = () => {
         .select(`
           id, name, artist_name, album_name, audio_url, format, duration, created_at, genre, year, track_image,
           album_id,
-          albums!fk_album(image_url)
+          albums(image_url)
         `)
         .eq('album_id', album.id); // Filtrar pelo novo album_id
       
