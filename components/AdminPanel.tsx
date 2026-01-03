@@ -130,9 +130,8 @@ CREATE POLICY "Admins can delete albums" ON public.albums FOR DELETE TO authenti
       .from('tracks')
       .select(`
         id, name, artist_name, album_name, audio_url, format, duration, created_at, genre, year, track_image,
-        album_id,
-        albums!fk_album(image_url)
-      `)
+        album_id
+      `) // Removida a junção com 'albums'
       .eq('user_id', currentUser.id) // Busca faixas onde o dono é o admin atual
       .order('created_at', { ascending: false });
     
@@ -143,8 +142,8 @@ CREATE POLICY "Admins can delete albums" ON public.albums FOR DELETE TO authenti
             artist_name: t.artist_name,
             album_id: t.album_id,
             album_name: t.album_name,
-            album_image: t.albums?.image_url || "https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?w=300",
-            track_image: t.track_image || t.albums?.image_url || "https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?w=300",
+            album_image: "https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?w=300", // Fallback temporário
+            track_image: t.track_image || "https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?w=300", // Imagem da faixa ou fallback do álbum
             audio: t.audio_url,
             audiodownload: t.audio_url,
             duration: t.duration || 0,

@@ -87,8 +87,7 @@ const App: React.FC = () => {
         .select(`
           id, name, artist_name, album_name, audio_url, format, duration, created_at, genre, year, track_image,
           album_id
-          -- albums!fk_album(image_url) -- Removido temporariamente para depuração
-        `);
+        `); // Removida a junção com 'albums'
       
       if (currentUser.role !== 'admin') {
         query = query.eq('user_id', currentUser.id);
@@ -191,9 +190,7 @@ const App: React.FC = () => {
         .select(`
           id, name, artist_name, album_name, audio_url, format, duration, created_at, genre, year, track_image,
           album_id
-          -- albums!fk_album(image_url) -- Removido temporariamente para depuração
-        `)
-        .eq('album_id', album.id); 
+        `); // Removida a junção com 'albums'
       
       if (currentUser.role !== 'admin') {
         query = query.eq('user_id', currentUser.id);
