@@ -101,23 +101,26 @@ const App: React.FC = () => {
         return [];
       }
       
-      return data?.map((t: any) => ({
-        id: t.id,
-        name: t.name,
-        artist_name: t.artist_name,
-        album_id: t.album_id, // Referência ao ID do álbum
-        album_name: t.album_name || 'Upload Local',
-        album_image: t.albums?.image_url || "https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?w=300", // Pega da tabela albums
-        track_image: t.track_image || t.albums?.image_url || "https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?w=300", // Imagem da faixa ou fallback do álbum
-        audio: t.audio_url,
-        audiodownload: t.audio_url,
-        duration: t.duration || 0,
-        format: t.format || 'mp3',
-        genre: t.genre || '',
-        year: t.year || '',
-        artist_id: 'local-artist',
-        isLocal: true
-      })) || [];
+      return data?.map((t: any) => {
+        console.log(`[App] Track ID: ${t.id}, Audio URL: ${t.audio_url}, Album Image: ${t.albums?.image_url}, Track Image: ${t.track_image}`);
+        return {
+          id: t.id,
+          name: t.name,
+          artist_name: t.artist_name,
+          album_id: t.album_id, // Referência ao ID do álbum
+          album_name: t.album_name || 'Upload Local',
+          album_image: t.albums?.image_url || "https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?w=300", // Pega da tabela albums
+          track_image: t.track_image || t.albums?.image_url || "https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?w=300", // Imagem da faixa ou fallback do álbum
+          audio: t.audio_url,
+          audiodownload: t.audio_url,
+          duration: t.duration || 0,
+          format: t.format || 'mp3',
+          genre: t.genre || '',
+          year: t.year || '',
+          artist_id: 'local-artist',
+          isLocal: true
+        };
+      }) || [];
     },
     enabled: !!currentUser
   });

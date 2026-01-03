@@ -205,6 +205,7 @@ const UploadModal: React.FC<UploadModalProps> = ({ isOpen, onClose }) => {
         const fileName = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}.${audioExt}`;
         const audioPath = `${currentUser.id}/${fileName}`;
 
+        console.log(`[UploadModal] Tentando upload de áudio para: ${audioPath}`);
         const { error: audioError } = await supabase.storage
           .from('audio')
           .upload(audioPath, track.file);
@@ -212,6 +213,8 @@ const UploadModal: React.FC<UploadModalProps> = ({ isOpen, onClose }) => {
         if (audioError) throw audioError;
 
         const { data: { publicUrl: audioUrl } } = supabase.storage.from('audio').getPublicUrl(audioPath);
+        console.log(`[UploadModal] Public URL do áudio: ${audioUrl}`);
+
 
         // 2. Gerenciar Álbum (criar ou encontrar existente)
         let albumId: string;
@@ -232,15 +235,20 @@ const UploadModal: React.FC<UploadModalProps> = ({ isOpen, onClose }) => {
         if (existingAlbum) {
           albumId = existingAlbum.id;
           albumImageUrl = existingAlbum.image_url || defaultCoverUrl;
+          console.log(`[UploadModal] Álbum existente encontrado: ${cleanAlbum}, ID: ${albumId}`);
         } else {
           // Se o álbum não existe, cria um novo
           let uploadedAlbumCoverUrl = defaultCoverUrl;
           if (track.coverFile) {
             const coverExt = track.coverFile.type.split('/')[1] || 'jpg';
             const coverPath = `${currentUser.id}/album_covers/${cleanAlbum}-${Date.now()}.${coverExt}`;
+            console.log(`[UploadModal] Tentando upload de capa de álbum para: ${coverPath}`);
             const { error: coverUploadError } = await supabase.storage.from('images').upload(coverPath, track.coverFile);
             if (!coverUploadError) {
               uploadedAlbumCoverUrl = supabase.storage.from('images').getPublicUrl(coverPath).data.publicUrl;
+              console.log(`[UploadModal] Public URL da capa do álbum: ${uploadedAlbumCoverUrl}`);
+            } else {
+              console.warn(`[UploadModal] Erro ao fazer upload da capa do álbum: ${coverUploadError.message}`);
             }
           }
 
@@ -258,6 +266,7 @@ const UploadModal: React.FC<UploadModalProps> = ({ isOpen, onClose }) => {
           if (newAlbumError) throw newAlbumError;
           albumId = newAlbum.id;
           albumImageUrl = newAlbum.image_url || defaultCoverUrl;
+          console.log(`[UploadModal] Novo álbum criado: ${cleanAlbum}, ID: ${albumId}`);
         }
 
         // 3. Upload da imagem da faixa (se houver uma específica)
@@ -265,9 +274,13 @@ const UploadModal: React.FC<UploadModalProps> = ({ isOpen, onClose }) => {
         if (track.coverFile) { // Se o usuário forneceu uma capa específica para esta faixa
           const coverExt = track.coverFile.type.split('/')[1] || 'jpg';
           const trackCoverPath = `${currentUser.id}/track_covers/${cleanTitle}-${Date.now()}.${coverExt}`;
+          console.log(`[UploadModal] Tentando upload de capa da faixa para: ${trackCoverPath}`);
           const { error: trackCoverUploadError } = await supabase.storage.from('images').upload(trackCoverPath, track.coverFile);
           if (!trackCoverUploadError) {
             trackImageUrl = supabase.storage.from('images').getPublicUrl(trackCoverPath).data.publicUrl;
+            console.log(`[UploadModal] Public URL da capa da faixa: ${trackImageUrl}`);
+          } else {
+            console.warn(`[UploadModal] Erro ao fazer upload da capa da faixa: ${trackCoverUploadError.message}`);
           }
         }
         // Se não houver track_image específica, ela será nula no DB e o frontend usará a album_image
@@ -286,6 +299,7 @@ const UploadModal: React.FC<UploadModalProps> = ({ isOpen, onClose }) => {
           genre: track.genre.trim(),
           year: track.year.trim()
         };
+        console.log(`[UploadModal] Inserindo track no DB:`, trackData);
 
         const { data: insertedTrack, error: dbError } = await supabase
           .from('tracks')
@@ -294,6 +308,7 @@ const UploadModal: React.FC<UploadModalProps> = ({ isOpen, onClose }) => {
           .single();
 
         if (dbError) throw dbError;
+        console.log(`[UploadModal] Track inserida com sucesso:`, insertedTrack);
 
         // 5. Update Global Store
         const trackToAdd: JamendoTrack = {
