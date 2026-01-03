@@ -147,6 +147,7 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({ onQueueClick, isQueueActive }
   if (!currentTrack) return null;
 
   const isLiked = likedTracks.some(t => t && t.id === currentTrack.id);
+  const displayImage = currentTrack.track_image || currentTrack.album_image; // Usar track_image ou album_image
 
   return (
     <>
@@ -155,7 +156,7 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({ onQueueClick, isQueueActive }
         onClick={() => setIsExpanded(true)}
         className="lg:hidden fixed bottom-16 left-2 right-2 h-14 bg-zinc-900/90 backdrop-blur-xl border border-white/5 rounded-2xl flex items-center px-3 z-40 animate-in slide-in-from-bottom-4 shadow-2xl"
       >
-        <img src={currentTrack.album_image} className="w-10 h-10 rounded-xl mr-3 object-cover shadow-lg" />
+        <img src={displayImage} className="w-10 h-10 rounded-xl mr-3 object-cover shadow-lg" />
         <div className="flex-1 min-w-0 mr-2">
           <p className="text-xs font-bold text-white truncate">{currentTrack.name}</p>
           <p className="text-[10px] text-zinc-400 truncate">{currentTrack.artist_name}</p>
@@ -180,7 +181,7 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({ onQueueClick, isQueueActive }
       {/* Desktop Player Bar */}
       <div className="hidden lg:flex h-24 bg-zinc-900 border-t border-zinc-800 px-6 items-center justify-between z-50 animate-in slide-in-from-bottom-full duration-300">
         <div className="flex items-center w-[30%]">
-          <img src={currentTrack.album_image} className="w-14 h-14 rounded-xl shadow-lg mr-4 object-cover" />
+          <img src={displayImage} className="w-14 h-14 rounded-xl shadow-lg mr-4 object-cover" />
           <div className="min-w-0">
             <h4 className="text-sm font-bold text-white truncate">{currentTrack.name}</h4>
             <p className="text-xs text-zinc-400 truncate">{currentTrack.artist_name}</p>
@@ -240,7 +241,7 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({ onQueueClick, isQueueActive }
 
           <div className="flex-1 flex flex-col justify-center items-center">
             <div className="w-full aspect-square mb-12 shadow-2xl relative">
-              <img src={currentTrack.album_image} className="w-full h-full object-cover rounded-3xl" />
+              <img src={displayImage} className="w-full h-full object-cover rounded-3xl" />
               <div className="absolute -bottom-8 left-0 right-0 h-24 opacity-30">
                 <Visualizer analyser={analyser} isActive={isPlaying} />
               </div>

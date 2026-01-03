@@ -8,7 +8,7 @@ import {
 import { useAuthStore, User } from '../store/authStore';
 import { useMusicStore } from '../store';
 import { supabase } from '../services/supabase';
-import { MusicRequest, JamendoTrack } from '../types';
+import { MusicRequest, JamendoTrack, Album } from '../types';
 
 const AdminPanel: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'users' | 'music' | 'requests'>('users');
@@ -37,6 +37,7 @@ const AdminPanel: React.FC = () => {
 ALTER TABLE public.tracks ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.music_requests ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.albums ENABLE ROW LEVEL SECURITY; -- Adicionar RLS para albums
 
 -- 2. Profiles Access (Required for admin checks)
 DROP POLICY IF EXISTS "Public profiles access" ON public.profiles;
@@ -80,6 +81,32 @@ USING (auth.uid() = user_id OR auth.uid() IN (SELECT id FROM public.profiles WHE
 DROP POLICY IF EXISTS "Owners update own tracks" ON public.tracks;
 CREATE POLICY "Owners update own tracks" ON public.tracks FOR UPDATE TO authenticated 
 USING (auth.uid() = user_id OR auth.uid() IN (SELECT id FROM public.profiles WHERE role = 'admin'));
+
+-- 5. Album Policies (New table)
+DROP POLICY IF EXISTS "Users can view their own albums" ON public.albums;
+CREATE POLICY "Users can view their own albums" ON public.albums FOR SELECT TO authenticated USING (auth.uid() = user_id OR auth.uid() IN (SELECT id FROM public.profiles WHERE role = 'admin'));
+
+DROP POLICY IF EXISTS "Users can insert their own albums" ON public.albums;
+CREATE POLICY "Users can insert their own albums" ON public.albums FOR INSERT TO authenticated WITH CHECK (auth.uid() = user_id);
+
+DROP POLICY IF EXISTS "Users can update their own albums" ON public.albums;
+CREATE POLICY "Users can update their own albums" ON public.albums FOR UPDATE TO authenticated USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+
+DROP POLICY IF EXISTS "Users can delete their own albums" ON public.albums;
+CREATE POLICY "Users can delete their own albums" ON public.albums FOR DELETE TO authenticated USING (auth.uid() = user_id);
+
+-- Políticas de RLS para admins na tabela 'albums'
+DROP POLICY IF EXISTS "Admins can view all albums" ON public.albums;
+CREATE POLICY "Admins can view all albums" ON public.albums FOR SELECT TO authenticated USING (auth.uid() IN (SELECT id FROM public.profiles WHERE role = 'admin'));
+
+DROP POLICY IF EXISTS "Admins can insert albums" ON public.albums;
+CREATE POLICY "Admins can insert albums" ON public.albums FOR INSERT TO authenticated WITH CHECK (auth.uid() IN (SELECT id FROM public.profiles WHERE role = 'admin'));
+
+DROP POLICY IF EXISTS "Admins can update albums" ON public.albums;
+CREATE POLICY "Admins can update albums" ON public.albums FOR UPDATE TO authenticated USING (auth.uid() IN (SELECT id FROM public.profiles WHERE role = 'admin'));
+
+DROP POLICY IF EXISTS "Admins can delete albums" ON public.albums;
+CREATE POLICY "Admins can delete albums" ON public.albums FOR DELETE TO authenticated USING (auth.uid() IN (SELECT id FROM public.profiles WHERE role = 'admin'));
 `;
 
   const handleRefresh = async () => {
@@ -98,28 +125,33 @@ USING (auth.uid() = user_id OR auth.uid() IN (SELECT id FROM public.profiles WHE
   const fetchAdminLibrary = async () => {
     if (!currentUser) return;
     setIsLoadingLibrary(true);
-    // Busca faixas onde o dono é o admin atual
+    
     const { data, error } = await supabase
       .from('tracks')
-      .select('*')
-      .eq('user_id', currentUser.id)
+      .select(`
+        id, name, artist_name, album_name, audio_url, format, duration, created_at, genre, year, track_image,
+        album_id,
+        albums!fk_album(image_url)
+      `)
+      .eq('user_id', currentUser.id) // Busca faixas onde o dono é o admin atual
       .order('created_at', { ascending: false });
     
     if (data) {
-        const mapped: JamendoTrack[] = data.map(t => ({
+        const mapped: JamendoTrack[] = data.map((t: any) => ({
             id: t.id,
             name: t.name,
             artist_name: t.artist_name,
+            album_id: t.album_id,
             album_name: t.album_name,
-            album_image: t.album_image,
+            album_image: t.albums?.image_url || "https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?w=300",
+            track_image: t.track_image || t.albums?.image_url || "https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?w=300",
             audio: t.audio_url,
             audiodownload: t.audio_url,
-            duration: t.duration,
-            format: t.format,
+            duration: t.duration || 0,
+            format: t.format || 'mp3',
             genre: t.genre,
             year: t.year,
             artist_id: 'local',
-            album_id: 'local',
             isLocal: true
         }));
         setAdminLibrary(mapped);
@@ -161,8 +193,9 @@ USING (auth.uid() = user_id OR auth.uid() IN (SELECT id FROM public.profiles WHE
         user_id: fulfillingRequest.user_id,
         name: track.name,
         artist_name: track.artist_name,
+        album_id: track.album_id, // Usar o ID do álbum
         album_name: track.album_name,
-        album_image: track.album_image,
+        track_image: track.track_image, // Usar a imagem da faixa
         audio_url: track.audio,
         format: track.format,
         duration: track.duration,
@@ -229,8 +262,9 @@ USING (auth.uid() = user_id OR auth.uid() IN (SELECT id FROM public.profiles WHE
         user_id: targetUserId,
         name: assigningTrack.name,
         artist_name: assigningTrack.artist_name,
+        album_id: assigningTrack.album_id, // Usar o ID do álbum
         album_name: assigningTrack.album_name,
-        album_image: assigningTrack.album_image,
+        track_image: assigningTrack.track_image, // Usar a imagem da faixa
         audio_url: assigningTrack.audio,
         format: assigningTrack.format,
         duration: assigningTrack.duration,
@@ -369,7 +403,7 @@ USING (auth.uid() = user_id OR auth.uid() IN (SELECT id FROM public.profiles WHE
                  </div>
              ) : availableTracks.length > 0 ? availableTracks.map(track => (
                <div key={track.id} onClick={() => !isSending && onSelect(track)} className={`p-3 border-b border-zinc-800/50 flex items-center gap-3 hover:bg-blue-600/10 cursor-pointer group transition-colors ${isSending ? 'opacity-50 pointer-events-none' : ''}`}>
-                  <img src={track.album_image} className="w-10 h-10 rounded-lg object-cover" />
+                  <img src={track.track_image || track.album_image} className="w-10 h-10 rounded-lg object-cover" />
                   <div className="flex-1 min-w-0">
                     <p className="font-bold text-sm text-white truncate group-hover:text-blue-400">{track.name}</p>
                     <p className="text-xs text-zinc-500">{track.artist_name}</p>
@@ -725,7 +759,7 @@ USING (auth.uid() = user_id OR auth.uid() IN (SELECT id FROM public.profiles WHE
               {activeTab === 'users' && (
                 <button 
                   onClick={() => setShowCreateModal(true)}
-                  className="bg-blue-600 text-white px-6 py-3 rounded-2xl font-black text-xs hover:bg-blue-500 transition-all flex items-center gap-2 shrink-0 shadow-xl shadow-blue-500/20 uppercase tracking-widest"
+                  className="bg-blue-600 text-white px-6 py-3 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-blue-500 transition-all flex items-center gap-2 shrink-0 shadow-xl shadow-blue-500/20 uppercase tracking-widest"
                 >
                   <UserPlus size={18} /> Novo
                 </button>
@@ -844,7 +878,7 @@ USING (auth.uid() = user_id OR auth.uid() IN (SELECT id FROM public.profiles WHE
                   <tr key={track.id} className="group/track hover:bg-white/[0.02] transition-colors">
                     <td className="px-8 py-5">
                       <div className="flex items-center">
-                        <img src={track.album_image} className="w-11 h-11 rounded-2xl mr-4 object-cover border border-white/5 shadow-2xl transition-transform group-hover/track:scale-110" />
+                        <img src={track.track_image || track.album_image} className="w-11 h-11 rounded-2xl mr-4 object-cover border border-white/5 shadow-2xl transition-transform group-hover/track:scale-110" />
                         <div className="min-w-0">
                           <div className="font-bold text-white text-sm truncate">{track.name}</div>
                           <div className="text-[9px] text-zinc-500 uppercase font-black tracking-widest truncate">{track.artist_name}</div>

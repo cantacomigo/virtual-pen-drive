@@ -8,7 +8,7 @@ import AdminPanel from './components/AdminPanel';
 import PremiumPlans from './components/PremiumPlans';
 import UploadModal from './components/UploadModal';
 import UserRequests from './components/UserRequests';
-import AlbumManagement from './components/AlbumManagement'; // Importar o novo componente
+import AlbumManagement from './components/AlbumManagement';
 import { useMusicStore } from './store';
 import { useAuthStore } from './store/authStore';
 import { supabase } from './services/supabase';
@@ -19,10 +19,10 @@ import {
   Mail, Award, UserCheck, Calendar, Filter, Eraser, User as UserIcon, Library, Tag,
   ListPlus, Home, UserRound, LayoutGrid, CalendarDays, History, Sparkles
 } from 'lucide-react';
-import { JamendoTrack, Playlist } from './types';
+import { JamendoTrack, Playlist, Album } from './types';
 
 const App: React.FC = () => {
-  const [view, setView] = useState<'home' | 'search' | 'library' | 'admin' | 'premium' | 'liked' | 'playlist' | 'queue' | 'profile' | 'requests' | 'albums'>('home'); // Adicionar 'albums'
+  const [view, setView] = useState<'home' | 'search' | 'library' | 'admin' | 'premium' | 'liked' | 'playlist' | 'queue' | 'profile' | 'requests' | 'albums'>('home');
   const [selectedPlaylistId, setSelectedPlaylistId] = useState<string | null>(null);
   const [selectedFilter, setSelectedFilter] = useState('Tudo');
   const [searchQuery, setSearchQuery] = useState('');
@@ -77,19 +77,19 @@ const App: React.FC = () => {
   }, [searchQuery, view]);
 
   // Músicas disponíveis
-  const { data: allTracks, refetch: refetchAllTracks, isLoading: isAllTracksLoading } = useQuery({
+  const { data: allTracks, refetch: refetchAllTracks, isLoading: isAllTracksLoading } = useQuery<JamendoTrack[]>({
     queryKey: ['all-tracks', currentUser?.id, currentUser?.role], 
     queryFn: async () => {
-      // Safety check for TS
       if (!currentUser) return [];
 
-      // INÍCIO DA QUERY SEGURA
       let query = supabase
         .from('tracks')
-        .select('id, name, artist_name, album_name, album_image, audio_url, format, duration, created_at, genre, year');
+        .select(`
+          id, name, artist_name, album_name, audio_url, format, duration, created_at, genre, year, track_image,
+          album_id,
+          albums!fk_album(image_url)
+        `);
       
-      // Se NÃO for admin, força o filtro para trazer apenas as músicas DESTE usuário.
-      // Isso é uma camada extra de segurança além do RLS do banco de dados.
       if (currentUser.role !== 'admin') {
         query = query.eq('user_id', currentUser.id);
       }
@@ -101,12 +101,14 @@ const App: React.FC = () => {
         return [];
       }
       
-      return data?.map(t => ({
+      return data?.map((t: any) => ({
         id: t.id,
         name: t.name,
         artist_name: t.artist_name,
+        album_id: t.album_id, // Referência ao ID do álbum
         album_name: t.album_name || 'Upload Local',
-        album_image: t.album_image || "https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=300",
+        album_image: t.albums?.image_url || "https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?w=300", // Pega da tabela albums
+        track_image: t.track_image || t.albums?.image_url || "https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?w=300", // Imagem da faixa ou fallback do álbum
         audio: t.audio_url,
         audiodownload: t.audio_url,
         duration: t.duration || 0,
@@ -114,7 +116,6 @@ const App: React.FC = () => {
         genre: t.genre || '',
         year: t.year || '',
         artist_id: 'local-artist',
-        album_id: 'local-album',
         isLocal: true
       })) || [];
     },
@@ -138,51 +139,31 @@ const App: React.FC = () => {
   }, [allTracks]);
 
   // Busca álbuns locais
-  const { data: localAlbums, isLoading: isLocalAlbumsLoading } = useQuery({
+  const { data: localAlbums, isLoading: isLocalAlbumsLoading } = useQuery<Album[]>({
     queryKey: ['local-albums', currentUser?.id],
     queryFn: async () => {
       if (!currentUser) return [];
 
-      // Query segura para álbuns também
       let query = supabase
-        .from('tracks')
-        .select('album_name, album_image, artist_name')
-        .not('album_name', 'is', null);
+        .from('albums')
+        .select('id, name, artist_name, image_url');
 
       if (currentUser.role !== 'admin') {
         query = query.eq('user_id', currentUser.id);
       }
       
-      const { data, error } = await query;
+      const { data, error } = await query.order('created_at', { ascending: false });
       
       if (error) return [];
       
-      const albumsMap = new Map();
-      
-      data.forEach(track => {
-        if (!track.album_name) return;
-        
-        const cleanAlbum = track.album_name.trim();
-        const cleanArtist = track.artist_name ? track.artist_name.trim() : 'Desconhecido';
-        
-        const key = cleanAlbum.toLowerCase(); 
-        
-        if (!albumsMap.has(key)) {
-          albumsMap.set(key, {
-            id: `local-${key}`,
-            name: cleanAlbum, 
-            artist_name: cleanArtist,
-            image: track.album_image || "https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?w=300",
-            isLocal: true
-          });
-        } else {
-          const existing = albumsMap.get(key);
-          if (existing.artist_name !== 'Vários Artistas' && existing.artist_name.toLowerCase() !== cleanArtist.toLowerCase()) {
-            existing.artist_name = 'Vários Artistas';
-          }
-        }
-      });
-      return Array.from(albumsMap.values());
+      return data?.map(album => ({
+        id: album.id,
+        name: album.name,
+        artist_name: album.artist_name,
+        image_url: album.image_url || "https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?w=300",
+        user_id: currentUser.id, // Adicionar user_id para consistência
+        created_at: new Date().toISOString() // Adicionar created_at
+      })) || [];
     },
     staleTime: 1000 * 60 * 5,
     enabled: !!currentUser
@@ -195,15 +176,19 @@ const App: React.FC = () => {
     return allTracks.filter(t => t.genre?.toLowerCase().includes(term));
   }, [allTracks, selectedFilter]);
 
-  const handleAlbumPlay = async (album: any) => {
+  const handleAlbumPlay = async (album: Album) => {
     if (!album || !currentUser) return;
     try {
       setIsAlbumLoading(album.id);
       
       let query = supabase
         .from('tracks')
-        .select('*')
-        .ilike('album_name', album.name);
+        .select(`
+          id, name, artist_name, album_name, audio_url, format, duration, created_at, genre, year, track_image,
+          album_id,
+          albums!fk_album(image_url)
+        `)
+        .eq('album_id', album.id); // Filtrar pelo novo album_id
       
       if (currentUser.role !== 'admin') {
         query = query.eq('user_id', currentUser.id);
@@ -213,12 +198,14 @@ const App: React.FC = () => {
           
       if (error) throw error;
       
-      const tracks = data.map(t => ({
+      const tracks: JamendoTrack[] = data.map((t: any) => ({
         id: t.id,
         name: t.name,
         artist_name: t.artist_name,
+        album_id: t.album_id,
         album_name: t.album_name,
-        album_image: t.album_image,
+        album_image: t.albums?.image_url || "https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?w=300",
+        track_image: t.track_image || t.albums?.image_url || "https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?w=300",
         audio: t.audio_url,
         audiodownload: t.audio_url,
         duration: t.duration || 0,
@@ -226,7 +213,6 @@ const App: React.FC = () => {
         genre: t.genre,
         year: t.year,
         artist_id: 'local-artist',
-        album_id: 'local-album',
         isLocal: true
       }));
 
@@ -338,7 +324,7 @@ const App: React.FC = () => {
           onLikedClick={() => setView('liked')}
           onPlaylistClick={(id) => { setSelectedPlaylistId(id); setView('playlist'); }}
           onRequestsClick={() => setView('requests')}
-          onAlbumManagementClick={() => setView('albums')} // Novo handler
+          onAlbumManagementClick={() => setView('albums')}
         />
         
         <main className="flex-1 flex flex-col bg-gradient-to-b from-zinc-900/50 to-black overflow-y-auto relative no-scrollbar">
@@ -356,7 +342,7 @@ const App: React.FC = () => {
                     type="text" 
                     value={searchQuery} 
                     onChange={(e) => setSearchQuery(e.target.value)} 
-                    onFocus={() => { if(!['queue', 'profile', 'admin', 'albums'].includes(view)) setView('search'); }} // Adicionar 'albums'
+                    onFocus={() => { if(!['queue', 'profile', 'admin', 'albums'].includes(view)) setView('search'); }}
                     placeholder="Encontre suas músicas..." 
                     className="bg-zinc-800/40 border border-zinc-700/40 rounded-2xl py-3 pl-12 pr-4 w-full text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 transition-all font-medium placeholder:text-zinc-600" 
                   />
@@ -509,7 +495,7 @@ const App: React.FC = () => {
             )}
 
             {view === 'requests' && <UserRequests />}
-            {view === 'albums' && <AlbumManagement />} {/* Renderizar o novo componente */}
+            {view === 'albums' && <AlbumManagement />}
 
             {view === 'home' && (
               <section className="animate-in fade-in duration-700">
@@ -531,7 +517,7 @@ const App: React.FC = () => {
                       {filteredTracks.map((track) => (
                         <div key={track.id} className="group bg-zinc-900/40 p-3 lg:p-4 rounded-3xl hover:bg-zinc-800/60 transition-all cursor-pointer border border-transparent hover:border-white/10 shadow-xl">
                           <div className="relative mb-4 aspect-square overflow-hidden rounded-2xl" onClick={() => { setQueue(filteredTracks); setCurrentTrack(track); }}>
-                            <img src={track.album_image} className="w-full h-full object-cover shadow-2xl transition-transform duration-700 group-hover:scale-110" />
+                            <img src={track.track_image || track.album_image} className="w-full h-full object-cover shadow-2xl transition-transform duration-700 group-hover:scale-110" />
                             <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
                               <button className="w-14 h-14 bg-blue-600 rounded-full flex items-center justify-center text-white shadow-2xl transform translate-y-4 group-hover:translate-y-0 transition-all duration-300 active:scale-90">
                                 <Play fill="currentColor" size={24} />
@@ -568,10 +554,10 @@ const App: React.FC = () => {
                     </div>
                   ) : localAlbums && localAlbums.length > 0 ? (
                     <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4 lg:gap-6">
-                      {localAlbums.map((album: any) => (
+                      {localAlbums.map((album: Album) => (
                         <div key={album.id} onClick={() => handleAlbumPlay(album)} className="group bg-zinc-900/40 p-3 lg:p-4 rounded-3xl hover:bg-zinc-800/60 transition-all cursor-pointer border border-transparent hover:border-white/10 text-center lg:text-left shadow-xl">
                           <div className="relative mb-4 aspect-square mx-auto overflow-hidden rounded-2xl">
-                            <img src={album.image} className="w-full h-full object-cover shadow-2xl transition-transform duration-700 group-hover:scale-110" />
+                            <img src={album.image_url} className="w-full h-full object-cover shadow-2xl transition-transform duration-700 group-hover:scale-110" />
                             <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity rounded-2xl flex items-center justify-center">
                               {isAlbumLoading === album.id ? (
                                 <div className="w-10 h-10 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
@@ -685,11 +671,10 @@ const App: React.FC = () => {
               </div>
             )}
 
-            {view === 'playlist' && selectedPlaylist && ( // Ensure selectedPlaylist exists
+            {view === 'playlist' && selectedPlaylist && (
               <section className="animate-in slide-in-from-bottom-4 duration-500">
                 <div className="flex flex-col lg:flex-row items-center lg:items-end gap-10 mb-14">
                    <div className="w-56 h-56 lg:w-72 lg:h-72 bg-gradient-to-br from-purple-600 via-pink-500 to-purple-400 rounded-[40px] shadow-2xl flex items-center justify-center relative group overflow-hidden">
-                     {/* Placeholder for playlist image or icon */}
                      {selectedPlaylist.image ? (
                        <img src={selectedPlaylist.image} alt={selectedPlaylist.name} className="w-full h-full object-cover" />
                      ) : (
@@ -711,7 +696,7 @@ const App: React.FC = () => {
                    </div>
                 </div>
                 <div className="bg-zinc-900/30 border border-white/5 rounded-[40px] p-2 lg:p-6 shadow-2xl">
-                  {selectedPlaylist.tracks.length > 0 ? ( // Now selectedPlaylist is guaranteed to exist
+                  {selectedPlaylist.tracks.length > 0 ? (
                     selectedPlaylist.tracks.map((track, i) => (
                       <TrackItem key={track.id} track={{ ...track, playlistContextId: selectedPlaylist.id }} index={i} />
                     ))
@@ -835,7 +820,7 @@ const App: React.FC = () => {
           <Search size={22} className={view === 'search' ? 'scale-110 drop-shadow-[0_0_8px_rgba(59,130,246,0.4)]' : ''} />
           <span className="text-[9px] font-black uppercase tracking-tighter">Buscar</span>
         </button>
-        <button onClick={() => setView('library')} className={`flex flex-col items-center gap-1.5 transition-all ${view === 'library' || view === 'liked' || view === 'albums' ? 'text-blue-500' : 'text-zinc-500'}`}> {/* Adicionar 'albums' */}
+        <button onClick={() => setView('library')} className={`flex flex-col items-center gap-1.5 transition-all ${view === 'library' || view === 'liked' || view === 'albums' ? 'text-blue-500' : 'text-zinc-500'}`}>
           <Library size={22} className={view === 'library' || view === 'liked' || view === 'albums' ? 'scale-110 drop-shadow-[0_0_8px_rgba(59,130,246,0.4)]' : ''} />
           <span className="text-[9px] font-black uppercase tracking-tighter">Coleção</span>
         </button>

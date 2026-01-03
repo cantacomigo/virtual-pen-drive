@@ -6,7 +6,7 @@ import {
 import { JamendoTrack } from '../types';
 import { useMusicStore } from '../store';
 import { useAuthStore } from '../store/authStore';
-import { supabase } from '../services/supabase'; // Importar supabase
+import { supabase } from '../services/supabase';
 
 interface TrackItemProps {
   track: JamendoTrack & { playlistContextId?: string };
@@ -17,16 +17,17 @@ const TrackItem: React.FC<TrackItemProps> = ({ track, index }) => {
   const { 
     currentTrack, isPlaying, setCurrentTrack, togglePlay, 
     addToQueue, playNextInQueue, playlists, addToPlaylist,
-    likedTracks, toggleLikeTrack, removeFromPlaylist, addNotification
+    likedTracks, toggleLikeTrack, removeFromPlaylist, addNotification,
+    updateTrackImage // Adicionar updateTrackImage
   } = useMusicStore();
   const { currentUser } = useAuthStore();
   
   const [showPlaylistMenu, setShowPlaylistMenu] = useState(false);
   const [showOptionsMenu, setShowOptionsMenu] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
-  const [isUploadingImage, setIsUploadingImage] = useState(false); // Novo estado para upload de imagem
+  const [isUploadingImage, setIsUploadingImage] = useState(false);
 
-  const fileInputRef = useRef<HTMLInputElement>(null); // Ref para o input de arquivo
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   if (!track) return null;
   
@@ -34,6 +35,9 @@ const TrackItem: React.FC<TrackItemProps> = ({ track, index }) => {
   const isLiked = likedTracks.some(t => t && t.id === track.id);
   const isPremium = currentUser?.plan === 'premium';
   
+  // Determina qual imagem usar: track_image se existir, senão album_image
+  const displayImage = track.track_image || track.album_image;
+
   const handlePlayClick = () => {
     if (isCurrent) togglePlay();
     else setCurrentTrack(track);
@@ -52,18 +56,15 @@ const TrackItem: React.FC<TrackItemProps> = ({ track, index }) => {
       setIsDownloading(true);
       addNotification(`Iniciando download...`, 'info');
       
-      // Busca o arquivo como blob para forçar o download local
       const response = await fetch(track.audiodownload);
       if (!response.ok) throw new Error('Falha ao obter arquivo do servidor');
       
       const blob = await response.blob();
       const url = window.URL.createObjectURL(blob);
       
-      // Cria o elemento de link invisível
       const link = document.createElement('a');
       link.href = url;
       
-      // Higieniza o nome do arquivo para evitar caracteres inválidos
       const safeName = track.name.replace(/[/\\?%*:|"<>]/g, '').trim();
       const safeArtist = track.artist_name.replace(/[/\\?%*:|"<>]/g, '').trim();
       link.setAttribute('download', `${safeName} - ${safeArtist}.mp3`);
@@ -71,7 +72,6 @@ const TrackItem: React.FC<TrackItemProps> = ({ track, index }) => {
       document.body.appendChild(link);
       link.click();
       
-      // Pequeno delay para garantir que o download iniciou antes de limpar
       setTimeout(() => {
         if (document.body.contains(link)) {
           document.body.removeChild(link);
@@ -89,46 +89,9 @@ const TrackItem: React.FC<TrackItemProps> = ({ track, index }) => {
     }
   };
 
-  const handleImageChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file || !track.id || !currentUser) return;
-
-    setIsUploadingImage(true);
-    setShowOptionsMenu(false); // Fecha o menu de opções imediatamente
-
-    try {
-      const fileExt = file.name.split('.').pop();
-      const filePath = `${currentUser.id}/album_covers/${track.album_name}-${Date.now()}.${fileExt}`; // Usar nome do álbum para o caminho
-
-      const { error: uploadError } = await supabase.storage
-        .from('images')
-        .upload(filePath, file);
-
-      if (uploadError) throw uploadError;
-
-      const { data: { publicUrl } } = supabase.storage.from('images').getPublicUrl(filePath);
-
-      // Atualiza o banco de dados para TODAS as faixas com o mesmo álbum e artista
-      const { error: dbError } = await supabase
-        .from('tracks')
-        .update({ album_image: publicUrl })
-        .eq('album_name', track.album_name)
-        .eq('artist_name', track.artist_name);
-
-      if (dbError) throw dbError;
-
-      // Atualiza o estado global do Zustand para todas as faixas do álbum
-      useMusicStore.getState().updateAlbumImage(track.album_name, track.artist_name, publicUrl);
-      addNotification('Capa do álbum atualizada com sucesso!', 'success');
-
-    } catch (error: any) {
-      console.error('Erro ao atualizar capa do álbum:', error);
-      addNotification(`Erro ao atualizar capa: ${error.message || 'Erro desconhecido'}`, 'error');
-    } finally {
-      setIsUploadingImage(false);
-      if (fileInputRef.current) fileInputRef.current.value = ''; // Limpa o input de arquivo
-    }
-  };
+  // A funcionalidade de alterar capa individual da música será removida daqui
+  // e centralizada no AlbumManagement para capas de álbum.
+  // Se o usuário quiser uma imagem específica para a faixa, ele terá que fazer upload junto com a música.
 
   return (
     <div className={`group flex items-center p-3 rounded-2xl lg:rounded-xl transition-all cursor-pointer border border-transparent hover:bg-zinc-800/80 active:bg-zinc-800/50 ${isCurrent ? 'bg-zinc-800/40 shadow-lg' : ''}`}>
@@ -143,7 +106,7 @@ const TrackItem: React.FC<TrackItemProps> = ({ track, index }) => {
       </div>
 
       <div className="relative shrink-0 mx-2" onClick={handlePlayClick}>
-        <img src={track.album_image} alt={track.name} className="w-11 h-11 rounded-lg object-cover shadow-lg" />
+        <img src={displayImage} alt={track.name} className="w-11 h-11 rounded-lg object-cover shadow-lg" />
         <div className={`absolute inset-0 bg-black/40 flex items-center justify-center rounded-lg lg:opacity-0 lg:group-hover:opacity-100 transition-opacity ${isCurrent ? 'opacity-100' : 'opacity-0'}`}>
           {isCurrent && isPlaying ? <Pause size={18} fill="white" /> : <Play size={18} fill="white" />}
         </div>
@@ -180,16 +143,6 @@ const TrackItem: React.FC<TrackItemProps> = ({ track, index }) => {
                 <button onClick={(e) => { e.stopPropagation(); addToQueue(track); setShowOptionsMenu(false); }} className="w-full flex items-center px-4 py-3 text-sm hover:bg-zinc-800 rounded-xl transition-all"><ListPlus size={16} className="mr-3" /> Adicionar à fila</button>
                 <button onClick={(e) => { e.stopPropagation(); setShowPlaylistMenu(!showPlaylistMenu); }} className={`w-full flex items-center px-4 py-3 text-sm hover:bg-zinc-800 rounded-xl transition-all ${showPlaylistMenu ? 'bg-zinc-800 text-white' : ''}`}><FolderPlus size={16} className="mr-3" /> Add à Playlist</button>
                 
-                {/* Nova opção para alterar capa do álbum */}
-                <button
-                  onClick={(e) => { e.stopPropagation(); fileInputRef.current?.click(); }}
-                  disabled={isUploadingImage}
-                  className="w-full flex items-center px-4 py-3 text-sm hover:bg-zinc-800 rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {isUploadingImage ? <Loader2 size={16} className="mr-3 animate-spin" /> : <ImageIcon size={16} className="mr-3" />}
-                  Alterar Capa
-                </button>
-
                 <button onClick={handleDownload} disabled={isDownloading} className="w-full flex items-center px-4 py-3 text-sm hover:bg-zinc-800 rounded-xl transition-all disabled:opacity-50">
                   {isDownloading ? <Loader2 size={16} className="mr-3 animate-spin text-blue-500" /> : <Download size={16} className="mr-3" />}
                   Download {isPremium ? '' : ' (Premium)'}
@@ -223,14 +176,6 @@ const TrackItem: React.FC<TrackItemProps> = ({ track, index }) => {
              </div>
           )}
         </div>
-        {/* Input de arquivo oculto para alterar a capa */}
-        <input
-          type="file"
-          accept="image/*"
-          className="hidden"
-          ref={fileInputRef}
-          onChange={handleImageChange}
-        />
       </div>
     </div>
   );

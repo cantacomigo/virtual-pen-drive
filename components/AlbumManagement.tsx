@@ -4,18 +4,11 @@ import { supabase } from '../services/supabase';
 import { useAuthStore } from '../store/authStore';
 import { useMusicStore } from '../store';
 import { Disc, ImageIcon, Loader2, Upload, X, CheckCircle2, AlertCircle } from 'lucide-react';
-
-interface Album {
-  id: string; // Usaremos o nome do álbum como ID único para a UI
-  name: string;
-  artist_name: string;
-  image: string;
-  isLocal: boolean;
-}
+import { Album } from '../types'; // Importar a interface Album
 
 const AlbumManagement: React.FC = () => {
   const { currentUser } = useAuthStore();
-  const { addNotification, updateAlbumImage } = useMusicStore();
+  const { addNotification, updateAlbumCover } = useMusicStore(); // Usar updateAlbumCover
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [isUploadingImage, setIsUploadingImage] = useState(false);
@@ -27,48 +20,21 @@ const AlbumManagement: React.FC = () => {
       if (!currentUser) return [];
 
       let query = supabase
-        .from('tracks')
-        .select('album_name, album_image, artist_name')
-        .not('album_name', 'is', null);
+        .from('albums') // Buscar da nova tabela 'albums'
+        .select('id, name, artist_name, image_url, user_id, created_at');
 
       if (currentUser.role !== 'admin') {
         query = query.eq('user_id', currentUser.id);
       }
       
-      const { data, error } = await query;
+      const { data, error } = await query.order('created_at', { ascending: false });
       
       if (error) {
         console.error("Erro ao buscar álbuns para gerenciamento:", error);
         return [];
       }
       
-      const albumsMap = new Map<string, Album>();
-      
-      data.forEach(track => {
-        if (!track.album_name) return;
-        
-        const cleanAlbum = track.album_name.trim();
-        const cleanArtist = track.artist_name ? track.artist_name.trim() : 'Desconhecido';
-        
-        const key = `${cleanAlbum.toLowerCase()}-${cleanArtist.toLowerCase()}`; 
-        
-        if (!albumsMap.has(key)) {
-          albumsMap.set(key, {
-            id: key, // Usar uma combinação de álbum e artista como ID único
-            name: cleanAlbum, 
-            artist_name: cleanArtist,
-            image: track.album_image || "https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?w=300",
-            isLocal: true
-          });
-        } else {
-          // Se já existe, e o artista é diferente, pode ser um álbum com vários artistas
-          const existing = albumsMap.get(key);
-          if (existing && existing.artist_name !== 'Vários Artistas' && existing.artist_name.toLowerCase() !== cleanArtist.toLowerCase()) {
-            existing.artist_name = 'Vários Artistas';
-          }
-        }
-      });
-      return Array.from(albumsMap.values());
+      return data || [];
     },
     staleTime: 1000 * 60 * 5,
     enabled: !!currentUser
@@ -92,17 +58,16 @@ const AlbumManagement: React.FC = () => {
 
       const { data: { publicUrl } } = supabase.storage.from('images').getPublicUrl(filePath);
 
-      // Atualiza o banco de dados para TODAS as faixas com o mesmo álbum e artista
+      // Atualiza o banco de dados para a tabela 'albums'
       const { error: dbError } = await supabase
-        .from('tracks')
-        .update({ album_image: publicUrl })
-        .eq('album_name', selectedAlbumForUpload.name)
-        .eq('artist_name', selectedAlbumForUpload.artist_name);
+        .from('albums')
+        .update({ image_url: publicUrl })
+        .eq('id', selectedAlbumForUpload.id); // Atualiza pelo ID do álbum
 
       if (dbError) throw dbError;
 
       // Atualiza o estado global do Zustand para todas as faixas do álbum
-      updateAlbumImage(selectedAlbumForUpload.name, selectedAlbumForUpload.artist_name, publicUrl);
+      updateAlbumCover(selectedAlbumForUpload.id, publicUrl); // Usar o ID do álbum
       addNotification('Capa do álbum atualizada com sucesso!', 'success');
       refetchLocalAlbums(); // Refetch para atualizar a lista de álbuns no componente
 
@@ -139,7 +104,7 @@ const AlbumManagement: React.FC = () => {
           {localAlbums.map(album => (
             <div key={album.id} className="group bg-zinc-900/40 p-4 rounded-3xl hover:bg-zinc-800/60 transition-all cursor-pointer border border-transparent hover:border-white/10 shadow-xl relative">
               <div className="relative mb-4 aspect-square overflow-hidden rounded-2xl">
-                <img src={album.image} alt={album.name} className="w-full h-full object-cover shadow-2xl transition-transform duration-700 group-hover:scale-110" />
+                <img src={album.image_url} alt={album.name} className="w-full h-full object-cover shadow-2xl transition-transform duration-700 group-hover:scale-110" />
                 <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
                   <button 
                     onClick={(e) => { e.stopPropagation(); setSelectedAlbumForUpload(album); fileInputRef.current?.click(); }}

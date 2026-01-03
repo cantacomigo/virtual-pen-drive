@@ -1,10 +1,9 @@
-
 import React, { useState, useRef, useCallback } from 'react';
 import { X, Loader2, AlertCircle, Upload, Image as ImageIcon, Music as MusicIcon, CheckCircle2, Trash2, Plus, FileAudio, Edit2, Save, Layers, Wand2 } from 'lucide-react';
 import { useMusicStore } from '../store';
 import { supabase } from '../services/supabase';
 import { useAuthStore } from '../store/authStore';
-import { JamendoTrack } from '../types';
+import { JamendoTrack, Album } from '../types';
 
 // Acessa o jsmediatags carregado via script tag no index.html
 declare var jsmediatags: any;
@@ -23,8 +22,8 @@ interface PendingTrack {
   genre: string;
   year: string;
   duration: number;
-  coverFile: File | null;
-  coverPreview: string | null;
+  coverFile: File | null; // Capa extraída do metadata ou fornecida
+  coverPreview: string | null; // URL de preview da capa
   status: 'pending' | 'uploading' | 'success' | 'error';
   errorMessage?: string;
 }
@@ -199,6 +198,7 @@ const UploadModal: React.FC<UploadModalProps> = ({ isOpen, onClose }) => {
         const cleanTitle = track.title.trim() || track.file.name.replace(/\.[^/.]+$/, "");
         const cleanArtist = track.artist.trim() || 'Desconhecido';
         const cleanAlbum = track.album.trim() || 'Upload Local';
+        const defaultCoverUrl = "https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?w=300";
 
         // 1. Upload Audio
         const audioExt = track.file.name.split('.').pop();
@@ -213,47 +213,73 @@ const UploadModal: React.FC<UploadModalProps> = ({ isOpen, onClose }) => {
 
         const { data: { publicUrl: audioUrl } } = supabase.storage.from('audio').getPublicUrl(audioPath);
 
-        // 2. Resolve Cover Image (DB Matching or Upload)
-        let finalAlbumName = cleanAlbum;
-        let finalArtistName = cleanArtist;
-        let finalCoverUrl = "https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=300";
+        // 2. Gerenciar Álbum (criar ou encontrar existente)
+        let albumId: string;
+        let albumImageUrl: string = defaultCoverUrl;
 
-        // Tenta encontrar álbum existente no banco para reusar a capa
-        const { data: existingAlbum } = await supabase
-          .from('tracks')
-          .select('album_name, artist_name, album_image')
+        // Tenta encontrar álbum existente
+        const { data: existingAlbum, error: albumFetchError } = await supabase
+          .from('albums')
+          .select('id, image_url')
           .eq('user_id', currentUser.id)
-          .ilike('album_name', cleanAlbum)
+          .ilike('name', cleanAlbum)
+          .ilike('artist_name', cleanArtist)
           .limit(1)
           .maybeSingle();
 
+        if (albumFetchError) throw albumFetchError;
+
         if (existingAlbum) {
-          finalAlbumName = existingAlbum.album_name; // Mantém casing consistente
-          if (existingAlbum.artist_name.toLowerCase() === cleanArtist.toLowerCase()) {
-            finalArtistName = existingAlbum.artist_name;
+          albumId = existingAlbum.id;
+          albumImageUrl = existingAlbum.image_url || defaultCoverUrl;
+        } else {
+          // Se o álbum não existe, cria um novo
+          let uploadedAlbumCoverUrl = defaultCoverUrl;
+          if (track.coverFile) {
+            const coverExt = track.coverFile.type.split('/')[1] || 'jpg';
+            const coverPath = `${currentUser.id}/album_covers/${cleanAlbum}-${Date.now()}.${coverExt}`;
+            const { error: coverUploadError } = await supabase.storage.from('images').upload(coverPath, track.coverFile);
+            if (!coverUploadError) {
+              uploadedAlbumCoverUrl = supabase.storage.from('images').getPublicUrl(coverPath).data.publicUrl;
+            }
           }
-          if (!track.coverFile) {
-            finalCoverUrl = existingAlbum.album_image;
-          }
+
+          const { data: newAlbum, error: newAlbumError } = await supabase
+            .from('albums')
+            .insert({
+              user_id: currentUser.id,
+              name: cleanAlbum,
+              artist_name: cleanArtist,
+              image_url: uploadedAlbumCoverUrl
+            })
+            .select('id, image_url')
+            .single();
+
+          if (newAlbumError) throw newAlbumError;
+          albumId = newAlbum.id;
+          albumImageUrl = newAlbum.image_url || defaultCoverUrl;
         }
 
-        // Se o usuário extraiu/forneceu capa específica para este arquivo, faz upload
-        if (track.coverFile) {
+        // 3. Upload da imagem da faixa (se houver uma específica)
+        let trackImageUrl: string | undefined = undefined;
+        if (track.coverFile) { // Se o usuário forneceu uma capa específica para esta faixa
           const coverExt = track.coverFile.type.split('/')[1] || 'jpg';
-          const coverPath = `${currentUser.id}/${Date.now()}-${Math.random().toString(36).substr(2, 5)}.${coverExt}`;
-          const { error: coverError } = await supabase.storage.from('images').upload(coverPath, track.coverFile);
-          if (!coverError) {
-            finalCoverUrl = supabase.storage.from('images').getPublicUrl(coverPath).data.publicUrl;
+          const trackCoverPath = `${currentUser.id}/track_covers/${cleanTitle}-${Date.now()}.${coverExt}`;
+          const { error: trackCoverUploadError } = await supabase.storage.from('images').upload(trackCoverPath, track.coverFile);
+          if (!trackCoverUploadError) {
+            trackImageUrl = supabase.storage.from('images').getPublicUrl(trackCoverPath).data.publicUrl;
           }
         }
+        // Se não houver track_image específica, ela será nula no DB e o frontend usará a album_image
 
-        // 3. Insert into DB
+        // 4. Insert into DB
         const trackData = {
           user_id: currentUser.id,
           name: cleanTitle,
-          artist_name: finalArtistName,
-          album_name: finalAlbumName,
-          album_image: finalCoverUrl,
+          artist_name: cleanArtist,
+          album_id: albumId, // Usar o ID do álbum
+          album_name: cleanAlbum, // Manter album_name para facilitar a busca
+          track_image: trackImageUrl, // Imagem específica da faixa
           audio_url: audioUrl,
           format: audioExt,
           duration: Math.floor(track.duration),
@@ -269,13 +295,15 @@ const UploadModal: React.FC<UploadModalProps> = ({ isOpen, onClose }) => {
 
         if (dbError) throw dbError;
 
-        // 4. Update Global Store
+        // 5. Update Global Store
         const trackToAdd: JamendoTrack = {
           id: insertedTrack.id,
           name: insertedTrack.name,
           artist_name: insertedTrack.artist_name,
+          album_id: insertedTrack.album_id,
           album_name: insertedTrack.album_name,
-          album_image: insertedTrack.album_image,
+          album_image: albumImageUrl, // Usar a imagem do álbum associado
+          track_image: insertedTrack.track_image, // Imagem específica da faixa
           audio: insertedTrack.audio_url,
           audiodownload: insertedTrack.audio_url,
           duration: insertedTrack.duration,
@@ -283,7 +311,6 @@ const UploadModal: React.FC<UploadModalProps> = ({ isOpen, onClose }) => {
           genre: insertedTrack.genre,
           year: insertedTrack.year,
           artist_id: 'local-artist',
-          album_id: 'local-album',
           isLocal: true
         };
         addUploadedTrack(trackToAdd);
