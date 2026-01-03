@@ -86,7 +86,8 @@ const App: React.FC = () => {
         .from('tracks')
         .select(`
           id, name, artist_name, album_name, audio_url, format, duration, created_at, genre, year, track_image,
-          album_id
+          album_id,
+          albums!fk_album(image_url)
         `);
       
       if (currentUser.role !== 'admin') {
@@ -107,8 +108,8 @@ const App: React.FC = () => {
           artist_name: t.artist_name,
           album_id: t.album_id, // Referência ao ID do álbum
           album_name: t.album_name || 'Upload Local',
-          album_image: "https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?w=300", // Usar fallback temporário
-          track_image: t.track_image || "https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?w=300", // Imagem da faixa ou fallback do álbum
+          album_image: t.albums?.image_url || "https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?w=300", // Pega da tabela albums
+          track_image: t.track_image || t.albums?.image_url || "https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?w=300", // Imagem da faixa ou fallback do álbum
           audio: t.audio_url,
           audiodownload: t.audio_url,
           duration: t.duration || 0,
@@ -189,7 +190,8 @@ const App: React.FC = () => {
         .from('tracks')
         .select(`
           id, name, artist_name, album_name, audio_url, format, duration, created_at, genre, year, track_image,
-          album_id
+          album_id,
+          albums!fk_album(image_url)
         `)
         .eq('album_id', album.id); 
       
@@ -207,8 +209,8 @@ const App: React.FC = () => {
         artist_name: t.artist_name,
         album_id: t.album_id,
         album_name: t.album_name,
-        album_image: album.image_url || "https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?w=300", // Usar a imagem do álbum passada
-        track_image: t.track_image || album.image_url || "https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?w=300", // Imagem da faixa ou fallback do álbum
+        album_image: t.albums?.image_url || "https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?w=300",
+        track_image: t.track_image || t.albums?.image_url || "https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?w=300",
         audio: t.audio_url,
         audiodownload: t.audio_url,
         duration: t.duration || 0,
