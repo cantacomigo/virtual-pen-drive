@@ -136,7 +136,27 @@ USING (auth.uid() = user_id OR auth.uid() IN (SELECT id FROM public.profiles WHE
     if (!fulfillingRequest) return;
     
     try {
-      // 1. Duplicate track for the requester
+      // 1. Check if requester already has this track
+      const { data: existingTrackForRequester, error: checkError } = await supabase
+        .from('tracks')
+        .select('id')
+        .eq('user_id', fulfillingRequest.user_id)
+        .ilike('name', track.name)
+        .ilike('artist_name', track.artist_name)
+        .maybeSingle();
+
+      if (checkError) throw checkError;
+
+      if (existingTrackForRequester) {
+        addNotification(`"${track.name}" já está na biblioteca de ${fulfillingRequest.user_name}.`, 'info');
+        // Optionally, update request status to completed even if not inserted
+        await supabase.from('music_requests').update({ status: 'completed' }).eq('id', fulfillingRequest.id);
+        setFulfillingRequest(null);
+        fetchRequests();
+        return; // Stop here, no insertion needed
+      }
+
+      // 2. Duplicate track for the requester
       const { error: insertError } = await supabase.from('tracks').insert({
         user_id: fulfillingRequest.user_id,
         name: track.name,
@@ -158,7 +178,7 @@ USING (auth.uid() = user_id OR auth.uid() IN (SELECT id FROM public.profiles WHE
         throw insertError;
       }
 
-      // 2. Update Request Status
+      // 3. Update Request Status
       const { error: updateError } = await supabase
         .from('music_requests')
         .update({ status: 'completed' })
@@ -187,6 +207,24 @@ USING (auth.uid() = user_id OR auth.uid() IN (SELECT id FROM public.profiles WHE
     if (!assigningTrack) return;
     
     try {
+       // 1. Check if target user already has this track
+      const { data: existingTrackForTarget, error: checkError } = await supabase
+        .from('tracks')
+        .select('id')
+        .eq('user_id', targetUserId)
+        .ilike('name', assigningTrack.name)
+        .ilike('artist_name', assigningTrack.artist_name)
+        .maybeSingle();
+
+      if (checkError) throw checkError;
+
+      if (existingTrackForTarget) {
+        const targetUser = users.find(u => u.id === targetUserId);
+        addNotification(`"${assigningTrack.name}" já está na biblioteca de ${targetUser?.name || 'usuário'}.`, 'info');
+        setAssigningTrack(null);
+        return; // Stop here, no insertion needed
+      }
+
        const { error } = await supabase.from('tracks').insert({
         user_id: targetUserId,
         name: assigningTrack.name,
