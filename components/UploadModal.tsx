@@ -598,6 +598,7 @@ const UploadModal: React.FC<UploadModalProps> = ({ isOpen, onClose }) => {
                  disabled={isUploading}
                  className="bg-blue-600 hover:bg-blue-500 disabled:opacity-50 px-8 py-3 rounded-xl font-black text-white text-xs flex items-center gap-2 shadow-xl shadow-blue-500/20 uppercase tracking-widest transition-all"
                >
+                 {isUploading ? <Loader2 className="animate-spin" size={16} /> : <Upload size={16} />}
                  {isUploading ? 'Enviando...' : 'Enviar Todos'}
                </button>
              )}
