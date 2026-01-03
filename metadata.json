@@ -1,0 +1,7 @@
+{
+  "name": "Virtual Pen-Drive",
+  "description": "A modern, private music player for managing your own collection like a cloud-based pen-drive.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
