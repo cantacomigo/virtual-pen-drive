@@ -18,7 +18,7 @@ import {
   Mail, Award, UserCheck, Calendar, Filter, Eraser, User as UserIcon, Library, Tag,
   ListPlus, Home, UserRound, LayoutGrid, CalendarDays, History, Sparkles
 } from 'lucide-react';
-import { JamendoTrack } from './types';
+import { JamendoTrack, Playlist } from './types';
 
 const App: React.FC = () => {
   const [view, setView] = useState<'home' | 'search' | 'library' | 'admin' | 'premium' | 'liked' | 'playlist' | 'queue' | 'profile' | 'requests'>('home');
@@ -289,6 +289,12 @@ const App: React.FC = () => {
     setSearchQuery('');
     addNotification('Busca reiniciada', 'info');
   };
+
+  // Define selectedPlaylist here
+  const selectedPlaylist: Playlist | null = useMemo(() => {
+    if (!selectedPlaylistId) return null;
+    return playlists.find(p => p.id === selectedPlaylistId) || null;
+  }, [playlists, selectedPlaylistId]);
 
   if (isAuthLoading) {
     return (
@@ -674,6 +680,49 @@ const App: React.FC = () => {
                   )}
                 </div>
               </div>
+            )}
+
+            {view === 'playlist' && selectedPlaylist && ( // Ensure selectedPlaylist exists
+              <section className="animate-in slide-in-from-bottom-4 duration-500">
+                <div className="flex flex-col lg:flex-row items-center lg:items-end gap-10 mb-14">
+                   <div className="w-56 h-56 lg:w-72 lg:h-72 bg-gradient-to-br from-purple-600 via-pink-500 to-purple-400 rounded-[40px] shadow-2xl flex items-center justify-center relative group overflow-hidden">
+                     {/* Placeholder for playlist image or icon */}
+                     {selectedPlaylist.image ? (
+                       <img src={selectedPlaylist.image} alt={selectedPlaylist.name} className="w-full h-full object-cover" />
+                     ) : (
+                       <ListMusic fill="white" className="w-[100px] h-[100px] lg:w-[130px] lg:h-[130px] text-white relative z-10 transition-transform duration-500 group-hover:scale-110 group-hover:drop-shadow-2xl" />
+                     )}
+                     <div className="absolute inset-0 bg-black/10" />
+                   </div>
+                   <div className="text-center lg:text-left flex-1">
+                     <p className="text-[10px] font-black uppercase tracking-[0.4em] text-purple-400 mb-4 bg-purple-500/10 px-4 py-1.5 rounded-full w-fit mx-auto lg:mx-0">SUA PLAYLIST</p>
+                     <h1 className="text-5xl lg:text-9xl font-black mb-8 tracking-tighter">{selectedPlaylist.name}</h1>
+                     <div className="flex items-center justify-center lg:justify-start gap-4">
+                        <div className="w-8 h-8 bg-white text-black rounded-full flex items-center justify-center font-black text-xs shadow-lg">
+                          {(currentUser?.name || 'U').charAt(0).toUpperCase()}
+                        </div>
+                        <span className="text-lg font-black">{currentUser?.name}</span>
+                        <div className="w-1.5 h-1.5 rounded-full bg-zinc-700" />
+                        <span className="text-zinc-500 text-lg font-semibold">{selectedPlaylist.tracks.length || 0} faixas</span>
+                     </div>
+                   </div>
+                </div>
+                <div className="bg-zinc-900/30 border border-white/5 rounded-[40px] p-2 lg:p-6 shadow-2xl">
+                  {selectedPlaylist.tracks.length > 0 ? ( // Now selectedPlaylist is guaranteed to exist
+                    selectedPlaylist.tracks.map((track, i) => (
+                      <TrackItem key={track.id} track={{ ...track, playlistContextId: selectedPlaylist.id }} index={i} />
+                    ))
+                  ) : (
+                    <div className="py-40 text-center text-zinc-500 flex flex-col items-center gap-6">
+                      <div className="p-6 bg-zinc-800/30 rounded-full">
+                        <ListMusic size={64} className="text-zinc-700" />
+                      </div>
+                      <p className="font-bold text-lg text-zinc-400">Esta playlist está vazia.</p>
+                      <p className="text-sm text-zinc-500 max-w-xs">Adicione músicas do seu acervo ou da busca.</p>
+                    </div>
+                  )}
+                </div>
+              </section>
             )}
 
             {view === 'profile' && (
