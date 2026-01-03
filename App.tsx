@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import Sidebar from './components/Sidebar';
@@ -128,8 +127,8 @@ const App: React.FC = () => {
     genres.add('Tudo');
     allTracks.forEach(track => {
       if (track.genre && track.genre.trim()) {
-        const gList = track.genre.split(/[,/]+/).map(g => g.trim());
-        gList.forEach(g => {
+        const gList = track.genre.split(/[,/]+/).map((g: string) => g.trim());
+        gList.forEach((g: string) => {
            if (g) genres.add(g.charAt(0).toUpperCase() + g.slice(1).toLowerCase());
         });
       }
