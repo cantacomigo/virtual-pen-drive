@@ -1,3 +1,11 @@
+export interface Album {
+  id: string;
+  name: string;
+  artist_name: string;
+  image_url: string; // A capa do álbum
+  user_id: string;
+  created_at: string;
+}
 
 export interface JamendoTrack {
   id: string;
@@ -5,9 +13,10 @@ export interface JamendoTrack {
   duration: number;
   artist_id: string;
   artist_name: string;
+  album_id: string; // Referência ao ID do álbum
   album_name: string;
-  album_id: string;
-  album_image: string;
+  album_image?: string; // Capa do álbum (será buscada da tabela 'albums' ou fallback)
+  track_image?: string; // Imagem específica da faixa (opcional)
   audio: string;
   audiodownload: string;
   isLocal?: boolean; 
