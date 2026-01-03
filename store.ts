@@ -1,4 +1,3 @@
-
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { JamendoTrack, Playlist, PlaybackState } from './types';
@@ -32,7 +31,7 @@ interface MusicStore extends PlaybackState {
   addUploadedTrack: (track: JamendoTrack) => void;
   removeUploadedTrack: (trackId: string) => void;
   updateTrackDuration: (trackId: string, duration: number) => void;
-  updateTrackImage: (trackId: string, imageUrl: string) => void;
+  updateTrackImage: (trackId: string, imageUrl: string) => void; // Nova ação
   createPlaylist: (name: string) => void;
   updatePlaylistImage: (playlistId: string, imageUrl: string) => void;
   addToPlaylist: (playlistId: string, track: JamendoTrack) => void;

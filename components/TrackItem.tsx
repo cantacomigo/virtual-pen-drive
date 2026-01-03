@@ -1,11 +1,12 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { 
   Play, Pause, MoreVertical, Heart, Download, 
-  ListMusic, Music as MusicIcon, Trash2, Lock, ListPlus, FolderPlus, Loader2, X 
+  ListMusic, Music as MusicIcon, Trash2, Lock, ListPlus, FolderPlus, Loader2, X, ImageIcon 
 } from 'lucide-react';
 import { JamendoTrack } from '../types';
 import { useMusicStore } from '../store';
 import { useAuthStore } from '../store/authStore';
+import { supabase } from '../services/supabase'; // Importar supabase
 
 interface TrackItemProps {
   track: JamendoTrack & { playlistContextId?: string };
@@ -23,6 +24,9 @@ const TrackItem: React.FC<TrackItemProps> = ({ track, index }) => {
   const [showPlaylistMenu, setShowPlaylistMenu] = useState(false);
   const [showOptionsMenu, setShowOptionsMenu] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
+  const [isUploadingImage, setIsUploadingImage] = useState(false); // Novo estado para upload de imagem
+
+  const fileInputRef = useRef<HTMLInputElement>(null); // Ref para o input de arquivo
 
   if (!track) return null;
   
@@ -85,6 +89,46 @@ const TrackItem: React.FC<TrackItemProps> = ({ track, index }) => {
     }
   };
 
+  const handleImageChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !track.id || !currentUser) return;
+
+    setIsUploadingImage(true);
+    setShowOptionsMenu(false); // Fecha o menu de opções imediatamente
+
+    try {
+      const fileExt = file.name.split('.').pop();
+      const filePath = `${currentUser.id}/album_covers/${track.id}-${Date.now()}.${fileExt}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from('images')
+        .upload(filePath, file);
+
+      if (uploadError) throw uploadError;
+
+      const { data: { publicUrl } } = supabase.storage.from('images').getPublicUrl(filePath);
+
+      // Atualiza o banco de dados
+      const { error: dbError } = await supabase
+        .from('tracks')
+        .update({ album_image: publicUrl })
+        .eq('id', track.id);
+
+      if (dbError) throw dbError;
+
+      // Atualiza o estado global do Zustand
+      useMusicStore.getState().updateTrackImage(track.id, publicUrl);
+      addNotification('Capa do álbum atualizada com sucesso!', 'success');
+
+    } catch (error: any) {
+      console.error('Erro ao atualizar capa do álbum:', error);
+      addNotification(`Erro ao atualizar capa: ${error.message || 'Erro desconhecido'}`, 'error');
+    } finally {
+      setIsUploadingImage(false);
+      if (fileInputRef.current) fileInputRef.current.value = ''; // Limpa o input de arquivo
+    }
+  };
+
   return (
     <div className={`group flex items-center p-3 rounded-2xl lg:rounded-xl transition-all cursor-pointer border border-transparent hover:bg-zinc-800/80 active:bg-zinc-800/50 ${isCurrent ? 'bg-zinc-800/40 shadow-lg' : ''}`}>
       <div className="w-8 flex items-center justify-center text-zinc-500 font-bold text-[10px] shrink-0">
@@ -134,6 +178,17 @@ const TrackItem: React.FC<TrackItemProps> = ({ track, index }) => {
                 <button onClick={(e) => { e.stopPropagation(); playNextInQueue(track); setShowOptionsMenu(false); }} className="w-full flex items-center px-4 py-3 text-sm hover:bg-zinc-800 rounded-xl transition-all text-blue-500 font-bold"><ListMusic size={16} className="mr-3" /> Tocar a seguir</button>
                 <button onClick={(e) => { e.stopPropagation(); addToQueue(track); setShowOptionsMenu(false); }} className="w-full flex items-center px-4 py-3 text-sm hover:bg-zinc-800 rounded-xl transition-all"><ListPlus size={16} className="mr-3" /> Adicionar à fila</button>
                 <button onClick={(e) => { e.stopPropagation(); setShowPlaylistMenu(!showPlaylistMenu); }} className={`w-full flex items-center px-4 py-3 text-sm hover:bg-zinc-800 rounded-xl transition-all ${showPlaylistMenu ? 'bg-zinc-800 text-white' : ''}`}><FolderPlus size={16} className="mr-3" /> Add à Playlist</button>
+                
+                {/* Nova opção para alterar capa do álbum */}
+                <button
+                  onClick={(e) => { e.stopPropagation(); fileInputRef.current?.click(); }}
+                  disabled={isUploadingImage}
+                  className="w-full flex items-center px-4 py-3 text-sm hover:bg-zinc-800 rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {isUploadingImage ? <Loader2 size={16} className="mr-3 animate-spin" /> : <ImageIcon size={16} className="mr-3" />}
+                  Alterar Capa
+                </button>
+
                 <button onClick={handleDownload} disabled={isDownloading} className="w-full flex items-center px-4 py-3 text-sm hover:bg-zinc-800 rounded-xl transition-all disabled:opacity-50">
                   {isDownloading ? <Loader2 size={16} className="mr-3 animate-spin text-blue-500" /> : <Download size={16} className="mr-3" />}
                   Download {isPremium ? '' : ' (Premium)'}
@@ -167,6 +222,14 @@ const TrackItem: React.FC<TrackItemProps> = ({ track, index }) => {
              </div>
           )}
         </div>
+        {/* Input de arquivo oculto para alterar a capa */}
+        <input
+          type="file"
+          accept="image/*"
+          className="hidden"
+          ref={fileInputRef}
+          onChange={handleImageChange}
+        />
       </div>
     </div>
   );
