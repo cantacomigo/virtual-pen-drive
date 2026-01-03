@@ -8,6 +8,7 @@ import AdminPanel from './components/AdminPanel';
 import PremiumPlans from './components/PremiumPlans';
 import UploadModal from './components/UploadModal';
 import UserRequests from './components/UserRequests';
+import AlbumManagement from './components/AlbumManagement'; // Importar o novo componente
 import { useMusicStore } from './store';
 import { useAuthStore } from './store/authStore';
 import { supabase } from './services/supabase';
@@ -21,7 +22,7 @@ import {
 import { JamendoTrack, Playlist } from './types';
 
 const App: React.FC = () => {
-  const [view, setView] = useState<'home' | 'search' | 'library' | 'admin' | 'premium' | 'liked' | 'playlist' | 'queue' | 'profile' | 'requests'>('home');
+  const [view, setView] = useState<'home' | 'search' | 'library' | 'admin' | 'premium' | 'liked' | 'playlist' | 'queue' | 'profile' | 'requests' | 'albums'>('home'); // Adicionar 'albums'
   const [selectedPlaylistId, setSelectedPlaylistId] = useState<string | null>(null);
   const [selectedFilter, setSelectedFilter] = useState('Tudo');
   const [searchQuery, setSearchQuery] = useState('');
@@ -70,7 +71,7 @@ const App: React.FC = () => {
   useEffect(() => {
     const timer = setTimeout(() => {
       setDebouncedSearch(searchQuery);
-      if (searchQuery && !['admin', 'premium', 'queue', 'profile', 'requests'].includes(view)) setView('search');
+      if (searchQuery && !['admin', 'premium', 'queue', 'profile', 'requests', 'albums'].includes(view)) setView('search');
     }, 400);
     return () => clearTimeout(timer);
   }, [searchQuery, view]);
@@ -337,6 +338,7 @@ const App: React.FC = () => {
           onLikedClick={() => setView('liked')}
           onPlaylistClick={(id) => { setSelectedPlaylistId(id); setView('playlist'); }}
           onRequestsClick={() => setView('requests')}
+          onAlbumManagementClick={() => setView('albums')} // Novo handler
         />
         
         <main className="flex-1 flex flex-col bg-gradient-to-b from-zinc-900/50 to-black overflow-y-auto relative no-scrollbar">
@@ -354,7 +356,7 @@ const App: React.FC = () => {
                     type="text" 
                     value={searchQuery} 
                     onChange={(e) => setSearchQuery(e.target.value)} 
-                    onFocus={() => { if(!['queue', 'profile', 'admin'].includes(view)) setView('search'); }}
+                    onFocus={() => { if(!['queue', 'profile', 'admin', 'albums'].includes(view)) setView('search'); }} // Adicionar 'albums'
                     placeholder="Encontre suas músicas..." 
                     className="bg-zinc-800/40 border border-zinc-700/40 rounded-2xl py-3 pl-12 pr-4 w-full text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 transition-all font-medium placeholder:text-zinc-600" 
                   />
@@ -507,6 +509,7 @@ const App: React.FC = () => {
             )}
 
             {view === 'requests' && <UserRequests />}
+            {view === 'albums' && <AlbumManagement />} {/* Renderizar o novo componente */}
 
             {view === 'home' && (
               <section className="animate-in fade-in duration-700">
@@ -832,8 +835,8 @@ const App: React.FC = () => {
           <Search size={22} className={view === 'search' ? 'scale-110 drop-shadow-[0_0_8px_rgba(59,130,246,0.4)]' : ''} />
           <span className="text-[9px] font-black uppercase tracking-tighter">Buscar</span>
         </button>
-        <button onClick={() => setView('library')} className={`flex flex-col items-center gap-1.5 transition-all ${view === 'library' || view === 'liked' ? 'text-blue-500' : 'text-zinc-500'}`}>
-          <Library size={22} className={view === 'library' || view === 'liked' ? 'scale-110 drop-shadow-[0_0_8px_rgba(59,130,246,0.4)]' : ''} />
+        <button onClick={() => setView('library')} className={`flex flex-col items-center gap-1.5 transition-all ${view === 'library' || view === 'liked' || view === 'albums' ? 'text-blue-500' : 'text-zinc-500'}`}> {/* Adicionar 'albums' */}
+          <Library size={22} className={view === 'library' || view === 'liked' || view === 'albums' ? 'scale-110 drop-shadow-[0_0_8px_rgba(59,130,246,0.4)]' : ''} />
           <span className="text-[9px] font-black uppercase tracking-tighter">Coleção</span>
         </button>
         <button onClick={() => setView('profile')} className={`flex flex-col items-center gap-1.5 transition-all ${view === 'profile' ? 'text-blue-500' : 'text-zinc-500'}`}>

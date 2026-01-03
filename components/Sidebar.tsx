@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Home, Search, Library, SquarePlus, Heart, Music, ListMusic, Trash2, Upload, Crown, Zap, Lock, MessageSquarePlus } from 'lucide-react';
+import { Home, Search, Library, SquarePlus, Heart, Music, ListMusic, Trash2, Upload, Crown, Zap, Lock, MessageSquarePlus, Disc } from 'lucide-react'; // Importar Disc
 import { useMusicStore } from '../store';
 import { useAuthStore } from '../store/authStore';
 
@@ -14,10 +14,11 @@ interface SidebarProps {
   onLikedClick: () => void;
   onPlaylistClick: (id: string) => void;
   onRequestsClick: () => void;
+  onAlbumManagementClick: () => void; // Novo prop
 }
 
 const Sidebar: React.FC<SidebarProps> = ({ 
-  onSearchClick, onHomeClick, onLibraryClick, onPremiumClick, onUploadClick, onLikedClick, onPlaylistClick, onRequestsClick
+  onSearchClick, onHomeClick, onLibraryClick, onPremiumClick, onUploadClick, onLikedClick, onPlaylistClick, onRequestsClick, onAlbumManagementClick
 }) => {
   const { playlists, createPlaylist, deletePlaylist, addNotification } = useMusicStore();
   const { currentUser } = useAuthStore();
@@ -69,6 +70,10 @@ const Sidebar: React.FC<SidebarProps> = ({
         <button onClick={onLibraryClick} className="w-full flex items-center text-zinc-400 hover:text-white px-3 py-2 transition-colors group">
           <Library className="mr-4 group-hover:scale-110 transition-transform group-hover:text-blue-500" />
           <span className="font-semibold">Biblioteca</span>
+        </button>
+        <button onClick={onAlbumManagementClick} className="w-full flex items-center text-zinc-400 hover:text-white px-3 py-2 transition-colors group">
+          <Disc className="mr-4 group-hover:scale-110 transition-transform group-hover:text-blue-500" />
+          <span className="font-semibold">Álbuns</span>
         </button>
         <button onClick={onPremiumClick} className="w-full flex items-center text-yellow-500 hover:text-yellow-400 px-3 py-2 transition-colors group">
           <Crown className="mr-4 group-hover:scale-110 transition-transform" />
