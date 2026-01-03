@@ -98,7 +98,7 @@ const TrackItem: React.FC<TrackItemProps> = ({ track, index }) => {
 
     try {
       const fileExt = file.name.split('.').pop();
-      const filePath = `${currentUser.id}/album_covers/${track.id}-${Date.now()}.${fileExt}`;
+      const filePath = `${currentUser.id}/album_covers/${track.album_name}-${Date.now()}.${fileExt}`; // Usar nome do álbum para o caminho
 
       const { error: uploadError } = await supabase.storage
         .from('images')
@@ -108,16 +108,17 @@ const TrackItem: React.FC<TrackItemProps> = ({ track, index }) => {
 
       const { data: { publicUrl } } = supabase.storage.from('images').getPublicUrl(filePath);
 
-      // Atualiza o banco de dados
+      // Atualiza o banco de dados para TODAS as faixas com o mesmo álbum e artista
       const { error: dbError } = await supabase
         .from('tracks')
         .update({ album_image: publicUrl })
-        .eq('id', track.id);
+        .eq('album_name', track.album_name)
+        .eq('artist_name', track.artist_name);
 
       if (dbError) throw dbError;
 
-      // Atualiza o estado global do Zustand
-      useMusicStore.getState().updateTrackImage(track.id, publicUrl);
+      // Atualiza o estado global do Zustand para todas as faixas do álbum
+      useMusicStore.getState().updateAlbumImage(track.album_name, track.artist_name, publicUrl);
       addNotification('Capa do álbum atualizada com sucesso!', 'success');
 
     } catch (error: any) {

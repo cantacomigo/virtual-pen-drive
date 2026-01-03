@@ -31,7 +31,7 @@ interface MusicStore extends PlaybackState {
   addUploadedTrack: (track: JamendoTrack) => void;
   removeUploadedTrack: (trackId: string) => void;
   updateTrackDuration: (trackId: string, duration: number) => void;
-  updateTrackImage: (trackId: string, imageUrl: string) => void; // Nova ação
+  updateAlbumImage: (albumName: string, artistName: string, imageUrl: string) => void; // Nova ação para atualizar a imagem do álbum
   createPlaylist: (name: string) => void;
   updatePlaylistImage: (playlistId: string, imageUrl: string) => void;
   addToPlaylist: (playlistId: string, track: JamendoTrack) => void;
@@ -210,24 +210,24 @@ export const useMusicStore = create<MusicStore>()(
         }));
       },
 
-      updateTrackImage: (trackId, imageUrl) => {
+      updateAlbumImage: (albumName, artistName, imageUrl) => {
         set((state) => ({
           uploadedTracks: state.uploadedTracks.map(t => 
-            t.id === trackId ? { ...t, album_image: imageUrl } : t
+            t.album_name === albumName && t.artist_name === artistName ? { ...t, album_image: imageUrl } : t
           ),
-          currentTrack: state.currentTrack?.id === trackId 
-            ? { ...state.currentTrack, album_image: imageUrl } 
+          currentTrack: state.currentTrack?.album_name === albumName && state.currentTrack?.artist_name === artistName
+            ? { ...state.currentTrack, album_image: imageUrl }
             : state.currentTrack,
           history: state.history.map(t => 
-            t.id === trackId ? { ...t, album_image: imageUrl } : t
+            t.album_name === albumName && t.artist_name === artistName ? { ...t, album_image: imageUrl } : t
           ),
           likedTracks: state.likedTracks.map(t => 
-            t.id === trackId ? { ...t, album_image: imageUrl } : t
+            t.album_name === albumName && t.artist_name === artistName ? { ...t, album_image: imageUrl } : t
           ),
           playlists: state.playlists.map(p => ({
             ...p,
             tracks: p.tracks.map(t => 
-              t.id === trackId ? { ...t, album_image: imageUrl } : t
+              t.album_name === albumName && t.artist_name === artistName ? { ...t, album_image: imageUrl } : t
             )
           }))
         }));
