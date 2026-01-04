@@ -3,12 +3,13 @@ import {
   Users, Music, Trash2, Shield, ShieldAlert, UserPlus, Search, 
   BarChart3, Camera, Crown, RefreshCw, X, Check, Edit2, Loader2,
   Mail, Key, ShieldCheck, User as UserIcon, Calendar, ArrowRight,
-  MessageSquare, Forward, CheckCircle, Upload, Copy, Tag
+  MessageSquare, Forward, CheckCircle, Upload, Copy, Tag, Disc
 } from 'lucide-react';
 import { useAuthStore, User } from '../store/authStore';
 import { useMusicStore } from '../store';
 import { supabase } from '../services/supabase';
 import { MusicRequest, JamendoTrack, Album } from '../types';
+import { useQuery } from '@tanstack/react-query'; // Importar useQuery
 
 const AdminPanel: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'users' | 'music' | 'requests'>('users');
@@ -22,13 +23,41 @@ const AdminPanel: React.FC = () => {
   const [requests, setRequests] = useState<MusicRequest[]>([]);
   const [fulfillingRequest, setFulfillingRequest] = useState<MusicRequest | null>(null);
   const [assigningTrack, setAssigningTrack] = useState<JamendoTrack | null>(null); 
-  
+  const [assigningAlbum, setAssigningAlbum] = useState<Album | null>(null); // Novo estado para álbum
+
   // Admin Library State (Fetched directly from DB to ensure accuracy)
   const [adminLibrary, setAdminLibrary] = useState<JamendoTrack[]>([]);
   const [isLoadingLibrary, setIsLoadingLibrary] = useState(false);
 
   const { users, deleteUser, toggleUserRole, updatePlan, currentUser, fetchUsers, updateProfile, register } = useAuthStore();
   const { removeUploadedTrack, addNotification } = useMusicStore();
+
+  // Fetch local albums for admin panel
+  const { data: localAlbums, isLoading: isLocalAlbumsLoading, refetch: refetchLocalAlbums } = useQuery<Album[]>({
+    queryKey: ['admin-local-albums', currentUser?.id],
+    queryFn: async () => {
+      if (!currentUser) return [];
+
+      let query = supabase
+        .from('albums')
+        .select('id, name, artist_name, image_url');
+
+      if (currentUser.role !== 'admin') {
+        query = query.eq('user_id', currentUser.id);
+      }
+      
+      const { data, error } = await query.order('created_at', { ascending: false });
+      
+      if (error) {
+        console.error("Erro ao buscar álbuns para gerenciamento:", error);
+        return [];
+      }
+      
+      return data || [];
+    },
+    staleTime: 1000 * 60 * 5,
+    enabled: !!currentUser
+  });
 
   const RLS_SQL = `-- CRITICAL SECURITY AND PERMISSIONS SETUP
 -- Run this entire block in Supabase SQL Editor to fix "policy violation" errors.
@@ -114,6 +143,7 @@ CREATE POLICY "Admins can delete albums" ON public.albums FOR DELETE TO authenti
     await fetchUsers();
     await fetchRequests();
     await fetchAdminLibrary();
+    await refetchLocalAlbums(); // Refresh albums as well
     setTimeout(() => setIsRefreshing(false), 500);
   };
 
@@ -289,6 +319,103 @@ CREATE POLICY "Admins can delete albums" ON public.albums FOR DELETE TO authenti
     }
   };
 
+  const handleAssignAlbum = async (album: Album, targetUserId: string) => {
+    if (!currentUser) return;
+
+    try {
+      // 1. Check if target user already has an album with the same name
+      let targetAlbumId: string;
+      const { data: existingTargetAlbum, error: checkAlbumError } = await supabase
+        .from('albums')
+        .select('id')
+        .eq('user_id', targetUserId)
+        .ilike('name', album.name)
+        .maybeSingle();
+
+      if (checkAlbumError) throw checkAlbumError;
+
+      if (existingTargetAlbum) {
+        targetAlbumId = existingTargetAlbum.id;
+        addNotification(`Álbum "${album.name}" já existe para o usuário.`, 'info');
+      } else {
+        // Create new album for target user
+        const { data: newAlbum, error: createAlbumError } = await supabase
+          .from('albums')
+          .insert({
+            user_id: targetUserId,
+            name: album.name,
+            artist_name: album.artist_name,
+            image_url: album.image_url,
+          })
+          .select('id')
+          .single();
+
+        if (createAlbumError) throw createAlbumError;
+        targetAlbumId = newAlbum.id;
+      }
+
+      // 2. Fetch all tracks from the original album
+      const { data: originalTracks, error: fetchTracksError } = await supabase
+        .from('tracks')
+        .select('*')
+        .eq('album_id', album.id);
+
+      if (fetchTracksError) throw fetchTracksError;
+
+      if (!originalTracks || originalTracks.length === 0) {
+        addNotification(`Nenhuma música encontrada no álbum "${album.name}".`, 'info');
+        return;
+      }
+
+      // 3. Duplicate each track for the target user
+      for (const track of originalTracks) {
+        const { data: existingTargetTrack, error: checkTrackError } = await supabase
+          .from('tracks')
+          .select('id')
+          .eq('user_id', targetUserId)
+          .ilike('name', track.name)
+          .ilike('artist_name', track.artist_name)
+          .maybeSingle();
+
+        if (checkTrackError) throw checkTrackError;
+
+        if (!existingTargetTrack) {
+          const { error: insertTrackError } = await supabase.from('tracks').insert({
+            user_id: targetUserId,
+            name: track.name,
+            artist_name: track.artist_name,
+            album_id: targetAlbumId, // Link to the target user's album
+            album_name: track.album_name,
+            track_image: track.track_image,
+            audio_url: track.audio_url,
+            format: track.format,
+            duration: track.duration,
+            genre: track.genre,
+            year: track.year,
+          });
+
+          if (insertTrackError) {
+            if (insertTrackError.code === '42501' || insertTrackError.message?.includes('row-level security')) {
+                setShowFixModal(true);
+                throw new Error("Permissão negada (Insert Track). Requer ajuste de DB.");
+            }
+            throw insertTrackError;
+          }
+        }
+      }
+      
+      const targetUser = users.find(u => u.id === targetUserId);
+      addNotification(`Álbum "${album.name}" enviado para ${targetUser?.name || 'usuário'}!`);
+
+    } catch (err: any) {
+      console.error('Erro ao encaminhar álbum:', err);
+      const msg = err.message || (typeof err === 'string' ? err : 'Erro desconhecido');
+      addNotification(`Erro ao encaminhar álbum: ${msg}`, 'error');
+    } finally {
+      setAssigningAlbum(null);
+    }
+  };
+
   const filteredUsers = users.filter(u => 
     u.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
     u.email.toLowerCase().includes(searchTerm.toLowerCase())
@@ -297,6 +424,11 @@ CREATE POLICY "Admins can delete albums" ON public.albums FOR DELETE TO authenti
   const filteredMusic = adminLibrary.filter(t => 
     t.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
     t.artist_name.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  const filteredAlbums = (localAlbums || []).filter(a =>
+    a.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    a.artist_name.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   const RlsFixModal = () => {
@@ -433,7 +565,11 @@ CREATE POLICY "Admins can delete albums" ON public.albums FOR DELETE TO authenti
 
     const onSelect = async (userId: string) => {
         setIsSending(userId);
-        await handleForwardTrack(userId);
+        if (assigningTrack) {
+          await handleForwardTrack(userId);
+        } else if (assigningAlbum) {
+          await handleAssignAlbum(assigningAlbum, userId);
+        }
         setIsSending(null);
     };
 
@@ -442,10 +578,14 @@ CREATE POLICY "Admins can delete albums" ON public.albums FOR DELETE TO authenti
         <div className="bg-zinc-900 border border-zinc-800 p-8 rounded-3xl w-full max-w-lg shadow-2xl h-[500px] flex flex-col">
           <div className="flex justify-between items-center mb-6">
             <h3 className="text-xl font-bold flex flex-col">
-              <span className="text-sm text-zinc-500 uppercase tracking-widest font-black">Encaminhar Música</span>
-              <span className="text-white truncate max-w-sm">{assigningTrack?.name}</span>
+              <span className="text-sm text-zinc-500 uppercase tracking-widest font-black">
+                {assigningTrack ? 'Encaminhar Música' : 'Encaminhar Álbum'}
+              </span>
+              <span className="text-white truncate max-w-sm">
+                {assigningTrack?.name || assigningAlbum?.name}
+              </span>
             </h3>
-            <button onClick={() => setAssigningTrack(null)} className="p-2 hover:bg-zinc-800 rounded-full"><X size={20}/></button>
+            <button onClick={() => { setAssigningTrack(null); setAssigningAlbum(null); }} className="p-2 hover:bg-zinc-800 rounded-full"><X size={20}/></button>
           </div>
 
           <div className="relative mb-4">
@@ -692,7 +832,7 @@ CREATE POLICY "Admins can delete albums" ON public.albums FOR DELETE TO authenti
       {editingUser && <EditUserModal />}
       {showCreateModal && <CreateUserModal />}
       {fulfillingRequest && <FulfillModal />}
-      {assigningTrack && <AssignModal />}
+      {(assigningTrack || assigningAlbum) && <AssignModal />} {/* Render AssignModal for track or album */}
       {showFixModal && <RlsFixModal />}
       
       <header className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
@@ -745,7 +885,7 @@ CREATE POLICY "Admins can delete albums" ON public.albums FOR DELETE TO authenti
         {activeTab !== 'requests' && (
           <div className="p-6 border-b border-white/5 flex flex-col sm:flex-row sm:items-center justify-between gap-6 bg-zinc-900/20">
             <h4 className="font-black text-sm uppercase tracking-[0.2em] text-zinc-400">
-              {activeTab === 'users' ? 'Gestão de Credenciais' : 'Diretório de Faixas'}
+              {activeTab === 'users' ? 'Gestão de Credenciais' : 'Diretório de Faixas e Álbuns'}
             </h4>
             <div className="flex items-center gap-4 w-full sm:w-auto">
               <div className="relative flex-1 sm:w-80 group">
@@ -810,7 +950,7 @@ CREATE POLICY "Admins can delete albums" ON public.albums FOR DELETE TO authenti
           <table className="w-full text-left">
             <thead>
               <tr className="text-zinc-500 text-[10px] font-black uppercase tracking-[0.2em] border-b border-white/5 bg-zinc-950/30">
-                <th className="px-8 py-5">Identidade do Membro/Faixa</th>
+                <th className="px-8 py-5">Identidade do Membro/Faixa/Álbum</th>
                 <th className="px-8 py-5">Detalhes</th>
                 <th className="px-8 py-5">Registro</th>
                 <th className="px-8 py-5 text-right">Controles</th>
@@ -874,41 +1014,109 @@ CREATE POLICY "Admins can delete albums" ON public.albums FOR DELETE TO authenti
                   );
                 })
               ) : (
-                filteredMusic.map(track => (
-                  <tr key={track.id} className="group/track hover:bg-white/[0.02] transition-colors">
-                    <td className="px-8 py-5">
-                      <div className="flex items-center">
-                        <img src={track.track_image || track.album_image} className="w-11 h-11 rounded-2xl mr-4 object-cover border border-white/5 shadow-2xl transition-transform group-hover/track:scale-110" />
-                        <div className="min-w-0">
-                          <div className="font-bold text-white text-sm truncate">{track.name}</div>
-                          <div className="text-[9px] text-zinc-500 uppercase font-black tracking-widest truncate">{track.artist_name}</div>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-8 py-5">
-                       <span className="text-[9px] bg-zinc-800/50 border border-zinc-700/30 px-2 py-1 rounded-lg text-zinc-400 font-black uppercase tracking-widest">{track.format || 'mp3'}</span>
-                    </td>
-                    <td className="px-8 py-5">
-                      <div className="flex items-center gap-2 text-zinc-600 font-mono text-[10px]">
-                        {Math.floor(track.duration / 60)}:{(track.duration % 60).toString().padStart(2, '0')}
-                      </div>
-                    </td>
-                    <td className="px-8 py-5 text-right">
-                      <div className="flex items-center justify-end gap-2">
-                        <button onClick={() => setAssigningTrack(track)} className="p-2.5 bg-zinc-800/50 hover:bg-green-600 hover:text-white rounded-xl text-zinc-400 transition-all opacity-0 group-hover/track:opacity-100" title="Encaminhar para usuário">
-                          <Forward size={16} />
-                        </button>
-                        <button onClick={() => { if (confirm(`Excluir "${track.name}"?`)) removeUploadedTrack(track.id); }} className="p-2.5 bg-zinc-800/50 hover:bg-red-500 hover:text-white rounded-xl text-zinc-400 transition-all opacity-0 group-hover/track:opacity-100"><Trash2 size={16} /></button>
-                      </div>
+                <>
+                  {/* Albums Section */}
+                  <tr className="bg-zinc-950/50">
+                    <td colSpan={4} className="px-8 py-4 text-sm font-black uppercase tracking-widest text-blue-400 flex items-center gap-3">
+                      <Disc size={16} /> Álbuns ({filteredAlbums.length})
                     </td>
                   </tr>
-                ))
+                  {isLocalAlbumsLoading ? (
+                    <tr>
+                      <td colSpan={4} className="text-center py-10">
+                        <Loader2 className="animate-spin text-blue-500 mx-auto" size={24} />
+                      </td>
+                    </tr>
+                  ) : filteredAlbums.length > 0 ? (
+                    filteredAlbums.map(album => (
+                      <tr key={album.id} className="group/album hover:bg-white/[0.02] transition-colors">
+                        <td className="px-8 py-5">
+                          <div className="flex items-center">
+                            <img src={album.image_url} className="w-11 h-11 rounded-2xl mr-4 object-cover border border-white/5 shadow-2xl transition-transform group-hover/album:scale-110" />
+                            <div className="min-w-0">
+                              <div className="font-bold text-white text-sm truncate">{album.name}</div>
+                              <div className="text-[9px] text-zinc-500 uppercase font-black tracking-widest truncate">{album.artist_name}</div>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-8 py-5">
+                          <span className="text-[9px] bg-blue-800/50 border border-blue-700/30 px-2 py-1 rounded-lg text-blue-400 font-black uppercase tracking-widest">ÁLBUM</span>
+                        </td>
+                        <td className="px-8 py-5">
+                          <div className="flex items-center gap-2 text-zinc-600 font-mono text-[10px]">
+                            {album.created_at ? new Date(album.created_at).toLocaleDateString('pt-BR') : 'Sem data'}
+                          </div>
+                        </td>
+                        <td className="px-8 py-5 text-right">
+                          <div className="flex items-center justify-end gap-2">
+                            <button onClick={() => setAssigningAlbum(album)} className="p-2.5 bg-zinc-800/50 hover:bg-green-600 hover:text-white rounded-xl text-zinc-400 transition-all opacity-0 group-hover/album:opacity-100" title="Encaminhar álbum para usuário">
+                              <Forward size={16} />
+                            </button>
+                            {/* Add delete album functionality if needed */}
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td colSpan={4} className="py-10 text-center text-zinc-500">Nenhum álbum encontrado.</td>
+                    </tr>
+                  )}
+
+                  {/* Tracks Section */}
+                  <tr className="bg-zinc-950/50">
+                    <td colSpan={4} className="px-8 py-4 text-sm font-black uppercase tracking-widest text-purple-400 flex items-center gap-3">
+                      <Music size={16} /> Faixas ({filteredMusic.length})
+                    </td>
+                  </tr>
+                  {isLoadingLibrary ? (
+                    <tr>
+                      <td colSpan={4} className="text-center py-10">
+                        <Loader2 className="animate-spin text-purple-500 mx-auto" size={24} />
+                      </td>
+                    </tr>
+                  ) : filteredMusic.length > 0 ? (
+                    filteredMusic.map(track => (
+                      <tr key={track.id} className="group/track hover:bg-white/[0.02] transition-colors">
+                        <td className="px-8 py-5">
+                          <div className="flex items-center">
+                            <img src={track.track_image || track.album_image} className="w-11 h-11 rounded-2xl mr-4 object-cover border border-white/5 shadow-2xl transition-transform group-hover/track:scale-110" />
+                            <div className="min-w-0">
+                              <div className="font-bold text-white text-sm truncate">{track.name}</div>
+                              <div className="text-[9px] text-zinc-500 uppercase font-black tracking-widest truncate">{track.artist_name}</div>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-8 py-5">
+                           <span className="text-[9px] bg-zinc-800/50 border border-zinc-700/30 px-2 py-1 rounded-lg text-zinc-400 font-black uppercase tracking-widest">{track.format || 'mp3'}</span>
+                        </td>
+                        <td className="px-8 py-5">
+                          <div className="flex items-center gap-2 text-zinc-600 font-mono text-[10px]">
+                            {Math.floor(track.duration / 60)}:{(track.duration % 60).toString().padStart(2, '0')}
+                          </div>
+                        </td>
+                        <td className="px-8 py-5 text-right">
+                          <div className="flex items-center justify-end gap-2">
+                            <button onClick={() => setAssigningTrack(track)} className="p-2.5 bg-zinc-800/50 hover:bg-green-600 hover:text-white rounded-xl text-zinc-400 transition-all opacity-0 group-hover/track:opacity-100" title="Encaminhar para usuário">
+                              <Forward size={16} />
+                            </button>
+                            <button onClick={() => { if (confirm(`Excluir "${track.name}"?`)) removeUploadedTrack(track.id); }} className="p-2.5 bg-zinc-800/50 hover:bg-red-500 hover:text-white rounded-xl text-zinc-400 transition-all opacity-0 group-hover/track:opacity-100"><Trash2 size={16} /></button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td colSpan={4} className="py-10 text-center text-zinc-500">Nenhuma faixa encontrada.</td>
+                    </tr>
+                  )}
+                </>
               )}
             </tbody>
           </table>
           )}
           
-          {(activeTab === 'users' ? filteredUsers : activeTab === 'music' ? filteredMusic : []).length === 0 && activeTab !== 'requests' && (
+          {(activeTab === 'users' ? filteredUsers : (activeTab === 'music' ? (filteredMusic.length === 0 && filteredAlbums.length === 0) : [])).length === 0 && activeTab !== 'requests' && (
             <div className="py-32 text-center">
               <div className="w-20 h-20 bg-zinc-900 border border-zinc-800 rounded-3xl flex items-center justify-center mx-auto mb-6 text-zinc-700">
                  <Search size={32} />
