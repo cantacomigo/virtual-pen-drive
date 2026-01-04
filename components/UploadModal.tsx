@@ -128,8 +128,8 @@ const UploadModal: React.FC<UploadModalProps> = ({ isOpen, onClose }) => {
           title: metadata.title || file.name.replace(/\.[^/.]+$/, ""),
           artist: metadata.artist || 'Artista Desconhecido',
           album: metadata.album || 'Upload Local',
-          year: metadata.year || '',
           genre: metadata.genre || '',
+          year: metadata.year || '',
           duration,
           coverFile: metadata.coverFile || null,
           coverPreview: metadata.coverPreview || null,
@@ -220,7 +220,7 @@ const UploadModal: React.FC<UploadModalProps> = ({ isOpen, onClose }) => {
         // Tenta encontrar álbum existente APENAS pelo nome do álbum e user_id
         const { data: existingAlbum, error: albumFetchError } = await supabase
           .from('albums')
-          .select('id, name, artist_name, image_url')
+          .select('id, name, artist_name, image_url') // Seleciona artist_name para verificar e atualizar
           .eq('user_id', currentUser.id)
           .ilike('name', cleanAlbum)
           .limit(1)
