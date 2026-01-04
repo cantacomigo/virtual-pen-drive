@@ -128,8 +128,8 @@ const UploadModal: React.FC<UploadModalProps> = ({ isOpen, onClose }) => {
           title: metadata.title || file.name.replace(/\.[^/.]+$/, ""),
           artist: metadata.artist || 'Artista Desconhecido',
           album: metadata.album || 'Upload Local',
-          genre: metadata.genre || '',
           year: metadata.year || '',
+          genre: metadata.genre || '',
           duration,
           coverFile: metadata.coverFile || null,
           coverPreview: metadata.coverPreview || null,
@@ -200,12 +200,6 @@ const UploadModal: React.FC<UploadModalProps> = ({ isOpen, onClose }) => {
         const cleanAlbum = track.album.trim() || 'Upload Local';
         const defaultCoverUrl = "https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?w=300";
 
-        // Determina o nome do artista do álbum. Se a faixa tiver múltiplos artistas, usa 'Vários Artistas'.
-        let albumArtistName = cleanArtist;
-        if (cleanArtist.includes(',') || cleanArtist.includes('&')) {
-            albumArtistName = 'Vários Artistas';
-        }
-
         // 1. Upload Audio
         const audioExt = track.file.name.split('.').pop();
         const fileName = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}.${audioExt}`;
@@ -223,13 +217,12 @@ const UploadModal: React.FC<UploadModalProps> = ({ isOpen, onClose }) => {
         let albumId: string;
         let albumImageUrl: string = defaultCoverUrl;
 
-        // Tenta encontrar álbum existente
+        // Tenta encontrar álbum existente APENAS pelo nome do álbum e user_id
         const { data: existingAlbum, error: albumFetchError } = await supabase
           .from('albums')
-          .select('id, image_url')
+          .select('id, name, artist_name, image_url')
           .eq('user_id', currentUser.id)
           .ilike('name', cleanAlbum)
-          .ilike('artist_name', albumArtistName) // Usa o nome do artista do álbum determinado
           .limit(1)
           .maybeSingle();
 
@@ -238,6 +231,15 @@ const UploadModal: React.FC<UploadModalProps> = ({ isOpen, onClose }) => {
         if (existingAlbum) {
           albumId = existingAlbum.id;
           albumImageUrl = existingAlbum.image_url || defaultCoverUrl;
+
+          // Se a faixa atual tem múltiplos artistas E o álbum existente não é 'Vários Artistas', atualiza o álbum
+          if ((cleanArtist.includes(',') || cleanArtist.includes('&')) && existingAlbum.artist_name !== 'Vários Artistas') {
+            console.log(`Atualizando artista do álbum "${existingAlbum.name}" para 'Vários Artistas'`);
+            await supabase
+              .from('albums')
+              .update({ artist_name: 'Vários Artistas' })
+              .eq('id', albumId);
+          }
         } else {
           // Se o álbum não existe, cria um novo
           let uploadedAlbumCoverUrl = defaultCoverUrl;
@@ -250,12 +252,18 @@ const UploadModal: React.FC<UploadModalProps> = ({ isOpen, onClose }) => {
             }
           }
 
+          // Determina o nome do artista para o NOVO álbum
+          let newAlbumArtistName = cleanArtist;
+          if (cleanArtist.includes(',') || cleanArtist.includes('&')) {
+            newAlbumArtistName = 'Vários Artistas';
+          }
+
           const { data: newAlbum, error: newAlbumError } = await supabase
             .from('albums')
             .insert({
               user_id: currentUser.id,
               name: cleanAlbum,
-              artist_name: albumArtistName, // Usa o nome do artista do álbum determinado
+              artist_name: newAlbumArtistName, // Usa o nome do artista determinado para o novo álbum
               image_url: uploadedAlbumCoverUrl
             })
             .select('id, image_url')
