@@ -196,9 +196,15 @@ const UploadModal: React.FC<UploadModalProps> = ({ isOpen, onClose }) => {
 
       try {
         const cleanTitle = track.title.trim() || track.file.name.replace(/\.[^/.]+$/, "");
-        const cleanArtist = track.artist.trim() || 'Desconhecido';
+        const cleanArtist = track.artist.trim() || 'Artista Desconhecido';
         const cleanAlbum = track.album.trim() || 'Upload Local';
         const defaultCoverUrl = "https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?w=300";
+
+        // Determina o nome do artista do álbum. Se a faixa tiver múltiplos artistas, usa 'Vários Artistas'.
+        let albumArtistName = cleanArtist;
+        if (cleanArtist.includes(',') || cleanArtist.includes('&')) {
+            albumArtistName = 'Vários Artistas';
+        }
 
         // 1. Upload Audio
         const audioExt = track.file.name.split('.').pop();
@@ -223,7 +229,7 @@ const UploadModal: React.FC<UploadModalProps> = ({ isOpen, onClose }) => {
           .select('id, image_url')
           .eq('user_id', currentUser.id)
           .ilike('name', cleanAlbum)
-          .ilike('artist_name', cleanArtist)
+          .ilike('artist_name', albumArtistName) // Usa o nome do artista do álbum determinado
           .limit(1)
           .maybeSingle();
 
@@ -249,7 +255,7 @@ const UploadModal: React.FC<UploadModalProps> = ({ isOpen, onClose }) => {
             .insert({
               user_id: currentUser.id,
               name: cleanAlbum,
-              artist_name: cleanArtist,
+              artist_name: albumArtistName, // Usa o nome do artista do álbum determinado
               image_url: uploadedAlbumCoverUrl
             })
             .select('id, image_url')
@@ -276,7 +282,7 @@ const UploadModal: React.FC<UploadModalProps> = ({ isOpen, onClose }) => {
         const trackData = {
           user_id: currentUser.id,
           name: cleanTitle,
-          artist_name: cleanArtist,
+          artist_name: cleanArtist, // Mantém o nome original do artista da faixa
           album_id: albumId, // Usar o ID do álbum
           album_name: cleanAlbum, // Manter album_name para facilitar a busca
           track_image: trackImageUrl, // Imagem específica da faixa
