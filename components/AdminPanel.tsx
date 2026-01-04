@@ -69,15 +69,14 @@ DROP POLICY IF EXISTS "Track Visibility" ON public.tracks;
 CREATE POLICY "Track Visibility" ON public.tracks FOR SELECT TO authenticated 
 USING (auth.uid() = user_id OR auth.uid() IN (SELECT id FROM public.profiles WHERE role = 'admin'));
 
--- Insert: Users can upload their own tracks
-DROP POLICY IF EXISTS "Users insert own tracks" ON public.tracks;
-CREATE POLICY "Users insert own tracks" ON public.tracks FOR INSERT TO authenticated 
-WITH CHECK (auth.uid() = user_id);
-
--- Insert: Admins can upload tracks for ANYONE (e.g. fulfilling requests)
-DROP POLICY IF EXISTS "Admin insert tracks" ON public.tracks;
-CREATE POLICY "Admin insert tracks" ON public.tracks FOR INSERT TO authenticated 
-WITH CHECK (auth.uid() IN (SELECT id FROM public.profiles WHERE role = 'admin'));
+-- Combined INSERT policy for tracks: Users can insert their own, Admins can insert for anyone
+DROP POLICY IF EXISTS "Users and Admins can insert tracks" ON public.tracks;
+CREATE POLICY "Users and Admins can insert tracks" ON public.tracks FOR INSERT TO authenticated
+WITH CHECK (
+    (auth.uid() = user_id) -- User can insert their own track
+    OR
+    (auth.uid() IN (SELECT id FROM public.profiles WHERE role = 'admin')) -- Admin can insert any track
+);
 
 -- Delete: Users can delete their own tracks + Admins can delete anything
 DROP POLICY IF EXISTS "Owners delete own tracks" ON public.tracks;
@@ -90,24 +89,30 @@ CREATE POLICY "Owners update own tracks" ON public.tracks FOR UPDATE TO authenti
 USING (auth.uid() = user_id OR auth.uid() IN (SELECT id FROM public.profiles WHERE role = 'admin'));
 
 -- 5. Album Policies (New table)
+-- Visibility: Users see their own albums + Admins see everything
 DROP POLICY IF EXISTS "Users can view their own albums" ON public.albums;
 CREATE POLICY "Users can view their own albums" ON public.albums FOR SELECT TO authenticated USING (auth.uid() = user_id OR auth.uid() IN (SELECT id FROM public.profiles WHERE role = 'admin'));
 
-DROP POLICY IF EXISTS "Users can insert their own albums" ON public.albums;
-CREATE POLICY "Users can insert their own albums" ON public.albums FOR INSERT TO authenticated WITH CHECK (auth.uid() = user_id);
+-- Combined INSERT policy for albums: Users can insert their own, Admins can insert for anyone
+DROP POLICY IF EXISTS "Users and Admins can insert albums" ON public.albums;
+CREATE POLICY "Users and Admins can insert albums" ON public.albums FOR INSERT TO authenticated
+WITH CHECK (
+    (auth.uid() = user_id) -- User can insert their own album
+    OR
+    (auth.uid() IN (SELECT id FROM public.profiles WHERE role = 'admin')) -- Admin can insert any album
+);
 
+-- Update: Users can update their own albums + Admins update anything
 DROP POLICY IF EXISTS "Users can update their own albums" ON public.albums;
 CREATE POLICY "Users can update their own albums" ON public.albums FOR UPDATE TO authenticated USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
 
+-- Delete: Users can delete their own albums + Admins can delete anything
 DROP POLICY IF EXISTS "Users can delete their own albums" ON public.albums;
 CREATE POLICY "Users can delete their own albums" ON public.albums FOR DELETE TO authenticated USING (auth.uid() = user_id);
 
--- Políticas de RLS para admins na tabela 'albums'
+-- Políticas de RLS para admins na tabela 'albums' (apenas para UPDATE/DELETE, SELECT já coberto)
 DROP POLICY IF EXISTS "Admins can view all albums" ON public.albums;
 CREATE POLICY "Admins can view all albums" ON public.albums FOR SELECT TO authenticated USING (auth.uid() IN (SELECT id FROM public.profiles WHERE role = 'admin'));
-
-DROP POLICY IF EXISTS "Admins can insert albums" ON public.albums;
-CREATE POLICY "Admins can insert albums" ON public.albums FOR INSERT TO authenticated WITH CHECK (auth.uid() IN (SELECT id FROM public.profiles WHERE role = 'admin'));
 
 DROP POLICY IF EXISTS "Admins can update albums" ON public.albums;
 CREATE POLICY "Admins can update albums" ON public.albums FOR UPDATE TO authenticated USING (auth.uid() IN (SELECT id FROM public.profiles WHERE role = 'admin'));
@@ -345,7 +350,13 @@ CREATE POLICY "Admins can delete albums" ON public.albums FOR DELETE TO authenti
           .select('id, image_url, artist_name')
           .single();
 
-        if (albumInsertError) throw albumInsertError;
+        if (albumInsertError) {
+          if (albumInsertError.code === '42501' || albumInsertError.message?.includes('row-level security')) {
+            setShowFixModal(true);
+            throw new Error("Permissão negada ao inserir álbum. Requer ajuste de DB.");
+          }
+          throw albumInsertError;
+        }
         targetAlbumId = newTargetAlbum.id;
         targetAlbumImageUrl = newTargetAlbum.image_url;
         targetAlbumArtistName = newTargetAlbum.artist_name;
