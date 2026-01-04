@@ -3,15 +3,17 @@ import {
   Users, Music, Trash2, Shield, ShieldAlert, UserPlus, Search, 
   BarChart3, Camera, Crown, RefreshCw, X, Check, Edit2, Loader2,
   Mail, Key, ShieldCheck, User as UserIcon, Calendar, ArrowRight,
-  MessageSquare, Forward, CheckCircle, Upload, Copy, Tag
+  MessageSquare, Forward, CheckCircle, Upload, Copy, Tag, Disc, LayoutGrid
 } from 'lucide-react';
 import { useAuthStore, User } from '../store/authStore';
 import { useMusicStore } from '../store';
 import { supabase } from '../services/supabase';
 import { MusicRequest, JamendoTrack, Album } from '../types';
+import AssignAlbumModal from './AssignAlbumModal'; // Importar o novo modal
 
 const AdminPanel: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'users' | 'music' | 'requests'>('users');
+  const [activeMusicSubTab, setActiveMusicSubTab] = useState<'albums' | 'tracks'>('albums'); // Novo estado para sub-aba
   const [searchTerm, setSearchTerm] = useState('');
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
@@ -26,6 +28,11 @@ const AdminPanel: React.FC = () => {
   // Admin Library State (Fetched directly from DB to ensure accuracy)
   const [adminLibrary, setAdminLibrary] = useState<JamendoTrack[]>([]);
   const [isLoadingLibrary, setIsLoadingLibrary] = useState(false);
+
+  // Admin Albums State
+  const [adminAlbums, setAdminAlbums] = useState<Album[]>([]); // Novo estado para álbuns
+  const [isLoadingAlbums, setIsLoadingAlbums] = useState(false); // Novo estado de loading para álbuns
+  const [assigningAlbum, setAssigningAlbum] = useState<Album | null>(null); // Álbum sendo encaminhado
 
   const { users, deleteUser, toggleUserRole, updatePlan, currentUser, fetchUsers, updateProfile, register } = useAuthStore();
   const { removeUploadedTrack, addNotification } = useMusicStore();
@@ -114,6 +121,7 @@ CREATE POLICY "Admins can delete albums" ON public.albums FOR DELETE TO authenti
     await fetchUsers();
     await fetchRequests();
     await fetchAdminLibrary();
+    await fetchAdminAlbums(); // Chamar a nova função de busca de álbuns
     setTimeout(() => setIsRefreshing(false), 500);
   };
 
@@ -148,7 +156,7 @@ CREATE POLICY "Admins can delete albums" ON public.albums FOR DELETE TO authenti
             audio: t.audio_url,
             audiodownload: t.audio_url,
             duration: t.duration || 0,
-            format: t.format || 'mp3',
+            format: t.format,
             genre: t.genre,
             year: t.year,
             artist_id: 'local',
@@ -159,9 +167,26 @@ CREATE POLICY "Admins can delete albums" ON public.albums FOR DELETE TO authenti
     setIsLoadingLibrary(false);
   };
 
+  // Nova função para buscar álbuns do admin
+  const fetchAdminAlbums = async () => {
+    if (!currentUser) return;
+    setIsLoadingAlbums(true);
+    const { data, error } = await supabase
+      .from('albums')
+      .select('*')
+      .eq('user_id', currentUser.id)
+      .order('created_at', { ascending: false });
+
+    if (data) {
+      setAdminAlbums(data);
+    }
+    setIsLoadingAlbums(false);
+  };
+
   useEffect(() => {
     fetchRequests();
     fetchAdminLibrary();
+    fetchAdminAlbums(); // Chamar a nova função de busca de álbuns
   }, [currentUser]);
 
   const handleFulfillWithTrack = async (track: JamendoTrack) => {
@@ -289,6 +314,128 @@ CREATE POLICY "Admins can delete albums" ON public.albums FOR DELETE TO authenti
     }
   };
 
+  // Nova função para encaminhar um álbum completo
+  const handleAssignAlbum = async (album: Album, targetUserId: string) => {
+    if (!album || !targetUserId) return;
+
+    try {
+      addNotification(`Encaminhando álbum "${album.name}" para o usuário...`, 'info');
+
+      // 1. Verificar/Criar o álbum para o usuário de destino
+      const { data: existingTargetAlbum, error: albumCheckError } = await supabase
+        .from('albums')
+        .select('id, name, artist_name, image_url')
+        .eq('user_id', targetUserId)
+        .ilike('name', album.name)
+        .maybeSingle();
+
+      let targetAlbumId = existingTargetAlbum?.id;
+      let targetAlbumImageUrl = existingTargetAlbum?.image_url || album.image_url;
+      let targetAlbumArtistName = existingTargetAlbum?.artist_name || album.artist_name;
+
+      if (!existingTargetAlbum) {
+        const { data: newTargetAlbum, error: albumInsertError } = await supabase
+          .from('albums')
+          .insert({
+            user_id: targetUserId,
+            name: album.name,
+            artist_name: album.artist_name, // Copia o artista do álbum original
+            image_url: album.image_url
+          })
+          .select('id, image_url, artist_name')
+          .single();
+
+        if (albumInsertError) throw albumInsertError;
+        targetAlbumId = newTargetAlbum.id;
+        targetAlbumImageUrl = newTargetAlbum.image_url;
+        targetAlbumArtistName = newTargetAlbum.artist_name;
+      }
+
+      // 2. Buscar todas as faixas do álbum original
+      const { data: originalTracks, error: tracksFetchError } = await supabase
+        .from('tracks')
+        .select('*')
+        .eq('album_id', album.id);
+
+      if (tracksFetchError) throw tracksFetchError;
+
+      if (!originalTracks || originalTracks.length === 0) {
+        addNotification(`Álbum "${album.name}" não possui faixas para encaminhar.`, 'info');
+        return;
+      }
+
+      // 3. Duplicar faixas para o usuário de destino
+      let tracksAddedCount = 0;
+      let albumArtistNeedsUpdate = false;
+
+      for (const track of originalTracks) {
+        // Verificar se a faixa já existe para o usuário de destino
+        const { data: existingTargetTrack, error: trackCheckError } = await supabase
+          .from('tracks')
+          .select('id')
+          .eq('user_id', targetUserId)
+          .eq('album_id', targetAlbumId) // Verifica dentro do álbum de destino
+          .ilike('name', track.name)
+          .ilike('artist_name', track.artist_name)
+          .maybeSingle();
+
+        if (trackCheckError) {
+          console.error(`Erro ao verificar faixa existente para ${track.name}:`, trackCheckError);
+          continue; // Pular para a próxima faixa em caso de erro de verificação
+        }
+
+        if (!existingTargetTrack) {
+          // Inserir nova faixa
+          const { error: trackInsertError } = await supabase.from('tracks').insert({
+            user_id: targetUserId,
+            name: track.name,
+            artist_name: track.artist_name,
+            album_id: targetAlbumId,
+            album_name: track.album_name,
+            track_image: track.track_image,
+            audio_url: track.audio_url,
+            format: track.format,
+            duration: track.duration,
+            genre: track.genre,
+            year: track.year
+          });
+
+          if (trackInsertError) {
+            console.error(`Erro ao inserir faixa "${track.name}" para o usuário ${targetUserId}:`, trackInsertError);
+            // Se for um erro de RLS, mostrar o modal de correção
+            if (trackInsertError.code === '42501' || trackInsertError.message?.includes('row-level security')) {
+              setShowFixModal(true);
+              throw new Error("Permissão negada ao inserir faixas. Requer ajuste de DB.");
+            }
+            continue; // Pular para a próxima faixa em caso de erro de inserção
+          }
+          tracksAddedCount++;
+
+          // Verificar se o artista da faixa indica múltiplos artistas e o álbum ainda não está marcado como 'Vários Artistas'
+          if ((track.artist_name.includes(',') || track.artist_name.includes('&')) && targetAlbumArtistName !== 'Vários Artistas') {
+            albumArtistNeedsUpdate = true;
+          }
+        }
+      }
+
+      // 4. Atualizar o nome do artista do álbum de destino se necessário
+      if (albumArtistNeedsUpdate && targetAlbumId) {
+        await supabase
+          .from('albums')
+          .update({ artist_name: 'Vários Artistas' })
+          .eq('id', targetAlbumId);
+      }
+
+      addNotification(`Álbum "${album.name}" encaminhado com ${tracksAddedCount} novas faixas!`);
+      setAssigningAlbum(null); // Fechar o modal
+    } catch (err: any) {
+      console.error("Erro ao encaminhar álbum:", err);
+      const msg = err.message || (typeof err === 'string' ? err : 'Erro desconhecido');
+      addNotification(`Erro ao encaminhar álbum: ${msg}`, 'error');
+    }
+  };
+
+
   const filteredUsers = users.filter(u => 
     u.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
     u.email.toLowerCase().includes(searchTerm.toLowerCase())
@@ -297,6 +444,11 @@ CREATE POLICY "Admins can delete albums" ON public.albums FOR DELETE TO authenti
   const filteredMusic = adminLibrary.filter(t => 
     t.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
     t.artist_name.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  const filteredAlbums = adminAlbums.filter(a =>
+    a.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    a.artist_name.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   const RlsFixModal = () => {
@@ -694,6 +846,14 @@ CREATE POLICY "Admins can delete albums" ON public.albums FOR DELETE TO authenti
       {fulfillingRequest && <FulfillModal />}
       {assigningTrack && <AssignModal />}
       {showFixModal && <RlsFixModal />}
+      {assigningAlbum && (
+        <AssignAlbumModal 
+          isOpen={!!assigningAlbum}
+          onClose={() => setAssigningAlbum(null)}
+          album={assigningAlbum}
+          onAssignAlbum={handleAssignAlbum}
+        />
+      )}
       
       <header className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
         <div>
@@ -745,9 +905,25 @@ CREATE POLICY "Admins can delete albums" ON public.albums FOR DELETE TO authenti
         {activeTab !== 'requests' && (
           <div className="p-6 border-b border-white/5 flex flex-col sm:flex-row sm:items-center justify-between gap-6 bg-zinc-900/20">
             <h4 className="font-black text-sm uppercase tracking-[0.2em] text-zinc-400">
-              {activeTab === 'users' ? 'Gestão de Credenciais' : 'Diretório de Faixas'}
+              {activeTab === 'users' ? 'Gestão de Credenciais' : 'Diretório de Mídia'}
             </h4>
             <div className="flex items-center gap-4 w-full sm:w-auto">
+              {activeTab === 'music' && (
+                <div className="flex bg-zinc-900/80 p-1.5 rounded-2xl border border-zinc-800 shadow-inner">
+                  <button 
+                    onClick={() => setActiveMusicSubTab('albums')}
+                    className={`flex items-center px-4 py-2 rounded-xl text-xs font-black transition-all uppercase tracking-widest ${activeMusicSubTab === 'albums' ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/20' : 'text-zinc-500 hover:text-white'}`}
+                  >
+                    <Disc size={14} className="mr-2" /> Álbuns
+                  </button>
+                  <button 
+                    onClick={() => setActiveMusicSubTab('tracks')}
+                    className={`flex items-center px-4 py-2 rounded-xl text-xs font-black transition-all uppercase tracking-widest ${activeMusicSubTab === 'tracks' ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/20' : 'text-zinc-500 hover:text-white'}`}
+                  >
+                    <Music size={14} className="mr-2" /> Faixas
+                  </button>
+                </div>
+              )}
               <div className="relative flex-1 sm:w-80 group">
                 <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-600 group-focus-within:text-blue-500 transition-colors" size={18} />
                 <input 
@@ -810,7 +986,7 @@ CREATE POLICY "Admins can delete albums" ON public.albums FOR DELETE TO authenti
           <table className="w-full text-left">
             <thead>
               <tr className="text-zinc-500 text-[10px] font-black uppercase tracking-[0.2em] border-b border-white/5 bg-zinc-950/30">
-                <th className="px-8 py-5">Identidade do Membro/Faixa</th>
+                <th className="px-8 py-5">Identidade do Membro/Mídia</th>
                 <th className="px-8 py-5">Detalhes</th>
                 <th className="px-8 py-5">Registro</th>
                 <th className="px-8 py-5 text-right">Controles</th>
@@ -873,7 +1049,38 @@ CREATE POLICY "Admins can delete albums" ON public.albums FOR DELETE TO authenti
                     </tr>
                   );
                 })
-              ) : (
+              ) : activeMusicSubTab === 'albums' ? (
+                filteredAlbums.map(album => (
+                  <tr key={album.id} className="group/album hover:bg-white/[0.02] transition-colors">
+                    <td className="px-8 py-5">
+                      <div className="flex items-center">
+                        <img src={album.image_url} className="w-11 h-11 rounded-2xl mr-4 object-cover border border-white/5 shadow-2xl transition-transform group-hover/album:scale-110" />
+                        <div className="min-w-0">
+                          <div className="font-bold text-white text-sm truncate">{album.name}</div>
+                          <div className="text-[9px] text-zinc-500 uppercase font-black tracking-widest truncate">{album.artist_name}</div>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-8 py-5">
+                       <span className="text-[9px] bg-zinc-800/50 border border-zinc-700/30 px-2 py-1 rounded-lg text-zinc-400 font-black uppercase tracking-widest">ÁLBUM</span>
+                    </td>
+                    <td className="px-8 py-5">
+                      <div className="flex items-center gap-2 text-zinc-600 font-mono text-[10px]">
+                        <Calendar size={12} />
+                        {new Date(album.created_at).toLocaleDateString('pt-BR')}
+                      </div>
+                    </td>
+                    <td className="px-8 py-5 text-right">
+                      <div className="flex items-center justify-end gap-2">
+                        <button onClick={() => setAssigningAlbum(album)} className="p-2.5 bg-zinc-800/50 hover:bg-green-600 hover:text-white rounded-xl text-zinc-400 transition-all opacity-0 group-hover/album:opacity-100" title="Encaminhar álbum para usuário">
+                          <Forward size={16} />
+                        </button>
+                        <button onClick={() => { if (confirm(`Excluir álbum "${album.name}" e todas as suas faixas?`)) { /* Lógica de exclusão de álbum */ } }} className="p-2.5 bg-zinc-800/50 hover:bg-red-500 hover:text-white rounded-xl text-zinc-400 transition-all opacity-0 group-hover/album:opacity-100"><Trash2 size={16} /></button>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              ) : ( // activeMusicSubTab === 'tracks'
                 filteredMusic.map(track => (
                   <tr key={track.id} className="group/track hover:bg-white/[0.02] transition-colors">
                     <td className="px-8 py-5">
@@ -908,7 +1115,7 @@ CREATE POLICY "Admins can delete albums" ON public.albums FOR DELETE TO authenti
           </table>
           )}
           
-          {(activeTab === 'users' ? filteredUsers : activeTab === 'music' ? filteredMusic : []).length === 0 && activeTab !== 'requests' && (
+          {(activeTab === 'users' ? filteredUsers : activeMusicSubTab === 'albums' ? filteredAlbums : filteredMusic).length === 0 && activeTab !== 'requests' && (
             <div className="py-32 text-center">
               <div className="w-20 h-20 bg-zinc-900 border border-zinc-800 rounded-3xl flex items-center justify-center mx-auto mb-6 text-zinc-700">
                  <Search size={32} />
