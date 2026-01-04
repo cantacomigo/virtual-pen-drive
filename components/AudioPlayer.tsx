@@ -80,6 +80,8 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({ onQueueClick, isQueueActive }
     cleanup();
     setIsBuffering(true);
 
+    console.log("Attempting to play:", currentTrack.name, "from URL:", currentTrack.audio); // LOG ADICIONADO
+
     const sound = new Howl({
       src: [currentTrack.audio],
       html5: true, 
@@ -87,6 +89,7 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({ onQueueClick, isQueueActive }
       format: ['mp3', 'wav', 'ogg'],
       volume: isMuted ? 0 : volume,
       onplay: () => {
+        console.log("Howler: onplay triggered"); // LOG ADICIONADO
         setIsBuffering(false);
         setPlaying(true);
         const d = sound.duration();
@@ -95,6 +98,7 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({ onQueueClick, isQueueActive }
         if (!isPremium) incrementPlaybackCount();
       },
       onload: () => {
+        console.log("Howler: onload triggered, duration:", sound.duration()); // LOG ADICIONADO
         setIsBuffering(false);
         const d = sound.duration();
         if (d > 0) {
@@ -102,11 +106,18 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({ onQueueClick, isQueueActive }
           if (currentTrack.id && (!currentTrack.duration)) syncDurationToDb(currentTrack.id, d);
         }
       },
-      onplayerror: () => {
+      onplayerror: (id, error) => {
+        console.error("Howler: onplayerror triggered for ID:", id, "Error:", error); // LOG ADICIONADO
         setIsBuffering(false);
         playNext();
       },
+      onloaderror: (id, error) => { // NOVO MANIPULADOR DE ERRO
+        console.error("Howler: onloaderror triggered for ID:", id, "Error:", error);
+        setIsBuffering(false);
+        playNext(); // Tenta a próxima música na fila
+      },
       onend: () => {
+        console.log("Howler: onend triggered"); // LOG ADICIONADO
         const currentRepeat = useMusicStore.getState().repeat;
         if (currentRepeat === 'one') sound.play();
         else playNext();
