@@ -503,50 +503,10 @@ const App: React.FC = () => {
                   {new Date().getHours() < 12 ? 'Bom dia' : new Date().getHours() < 18 ? 'Boa tarde' : 'Boa noite'}
                 </h1>
                 
-                <div className="mb-14">
-                  <h2 className="text-xl lg:text-2xl font-bold flex items-center gap-3 mb-6 lg:mb-8">
-                    <div className="p-2 bg-blue-500/10 rounded-xl"><Clock className="text-blue-500" size={20} /></div>
-                    Novidades no Pen-Drive
-                  </h2>
-                  {isAllTracksLoading ? (
-                    <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4 lg:gap-6">
-                      {[1, 2, 3, 4, 5, 6].map(i => <div key={i} className="aspect-square bg-zinc-900 animate-pulse rounded-2xl shadow-lg" />)}
-                    </div>
-                  ) : filteredTracks.length > 0 ? (
-                    <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4 lg:gap-6">
-                      {filteredTracks.map((track) => (
-                        <div key={track.id} className="group bg-zinc-900/40 p-3 lg:p-4 rounded-3xl hover:bg-zinc-800/60 transition-all cursor-pointer border border-transparent hover:border-white/10 shadow-xl">
-                          <div className="relative mb-4 aspect-square overflow-hidden rounded-2xl" onClick={() => { setQueue(filteredTracks); setCurrentTrack(track); }}>
-                            <img src={track.track_image || track.album_image} className="w-full h-full object-cover shadow-2xl transition-transform duration-700 group-hover:scale-110" />
-                            <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                              <button className="w-14 h-14 bg-blue-600 rounded-full flex items-center justify-center text-white shadow-2xl transform translate-y-4 group-hover:translate-y-0 transition-all duration-300 active:scale-90">
-                                <Play fill="currentColor" size={24} />
-                              </button>
-                            </div>
-                            <div className="absolute top-2 right-2 flex flex-col gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                               <button onClick={(e) => { e.stopPropagation(); playNextInQueue(track); }} className="p-2 bg-black/60 backdrop-blur-md rounded-xl text-white hover:bg-blue-600 hover:text-white transition-all" title="Tocar a seguir">
-                                 <ListMusic size={14} />
-                               </button>
-                            </div>
-                          </div>
-                          <div onClick={() => { setQueue(filteredTracks); setCurrentTrack(track); }}>
-                            <h4 className="font-bold truncate text-sm lg:text-base text-zinc-100">{track.name}</h4>
-                            <p className="text-[10px] lg:text-xs text-zinc-500 truncate font-semibold mt-0.5">{track.artist_name}</p>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="py-20 text-center text-zinc-600 border border-dashed border-zinc-800 rounded-[32px] bg-zinc-900/20">
-                      Sua biblioteca está silenciosa. Faça um upload para começar.
-                    </div>
-                  )}
-                </div>
-
                 <div className="mb-12">
                   <h2 className="text-xl lg:text-2xl font-bold mb-6 lg:mb-8 flex items-center gap-3">
                     <div className="p-2 bg-indigo-500/10 rounded-xl"><Disc className="text-indigo-400" size={20} /></div>
-                    Álbuns Recentes
+                    Álbuns em Destaque
                   </h2>
                   {isLocalAlbumsLoading ? (
                     <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4 lg:gap-6">
