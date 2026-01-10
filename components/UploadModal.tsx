@@ -209,7 +209,11 @@ const UploadModal: React.FC<UploadModalProps> = ({ isOpen, onClose }) => {
           .from('audio')
           .upload(audioPath, track.file);
 
-        if (audioError) throw audioError;
+        if (audioError) {
+            // Tenta extrair a mensagem de erro do Supabase Storage
+            const errorMessage = audioError.message || 'Erro desconhecido no upload de áudio.';
+            throw new Error(`Falha no upload de áudio: ${errorMessage}`);
+        }
 
         const { data: { publicUrl: audioUrl } } = supabase.storage.from('audio').getPublicUrl(audioPath);
 
@@ -344,8 +348,8 @@ const UploadModal: React.FC<UploadModalProps> = ({ isOpen, onClose }) => {
         }
         
         // Improve RLS error message for user
-        if (msg.includes('row-level security')) {
-            msg = "Permissão negada. Contate o administrador para liberar uploads.";
+        if (msg.includes('row-level security') || msg.includes('Falha no upload de áudio')) {
+            msg = "Falha no upload. Verifique se o RLS do bucket 'audio' permite INSERT para usuários autenticados.";
         }
 
         setPendingTracks(prev => prev.map(t => t.id === track.id ? { ...t, status: 'error', errorMessage: msg } : t));
