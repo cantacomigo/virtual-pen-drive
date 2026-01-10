@@ -8,7 +8,7 @@ import { useMusicStore } from '../store';
 import { useAuthStore } from '../store/authStore';
 import { supabase } from '../services/supabase';
 import Visualizer from './Visualizer';
-import { getSignedUrl, extractStoragePath } from '../utils/storage'; // Importar utilitários
+import { getSignedUrl, extractStoragePath } from '../src/utils/storage'; // Importar utilitários
 
 const FREE_PLAYBACK_LIMIT = 50;
 
