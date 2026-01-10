@@ -23,6 +23,7 @@ export interface JamendoTrack {
   format?: string; // Hint de formato para o Howler (ex: 'mp3', 'wav', 'ogg')
   genre?: string;
   year?: string | number;
+  user_id?: string; // Adicionado para rastrear o proprietário da faixa
 }
 
 export interface Playlist {
