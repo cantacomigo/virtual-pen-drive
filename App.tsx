@@ -139,7 +139,7 @@ const App: React.FC = () => {
   }, [allTracks]);
 
   // Busca álbuns locais
-  const { data: localAlbums, isLoading: isLocalAlbumsLoading } = useQuery<Album[]>({
+  const { data: localAlbums, isLoading: isLocalAlbumsLoading, refetch: refetchLocalAlbums } = useQuery<Album[]>({
     queryKey: ['local-albums', currentUser?.id],
     queryFn: async () => {
       if (!currentUser) return [];
@@ -262,7 +262,7 @@ const App: React.FC = () => {
     if (!newName.trim()) return;
     const res = await updateProfile(newName.trim());
     if (res.success) {
-      addNotification('Perfil atualizado!');
+      addNotification('Perfil atualizado!', 'success');
       setIsEditingName(false);
     }
   };
@@ -495,7 +495,7 @@ const App: React.FC = () => {
             )}
 
             {view === 'requests' && <UserRequests />}
-            {view === 'albums' && <AlbumManagement />}
+            {view === 'albums' && <AlbumManagement onPlayAlbum={handleAlbumPlay} isAlbumLoading={isAlbumLoading} />}
 
             {view === 'home' && (
               <section className="animate-in fade-in duration-700">
@@ -651,7 +651,7 @@ const App: React.FC = () => {
                         </div>
                         <span className="text-lg font-black">{currentUser?.name}</span>
                         <div className="w-1.5 h-1.5 rounded-full bg-zinc-700" />
-                        <span className="text-zinc-500 text-lg font-semibold">{selectedPlaylist.tracks.length || 0} faixas</span>
+                        <span className="text-zinc-500 text-lg font-semibold">{selectedPlaylist.tracks.length || 0} faixas salvas</span>
                      </div>
                    </div>
                 </div>
@@ -792,7 +792,7 @@ const App: React.FC = () => {
         </button>
       </nav>
 
-      <UploadModal isOpen={isUploadModalOpen} onClose={() => { setIsUploadModalOpen(false); refetchAllTracks(); }} />
+      <UploadModal isOpen={isUploadModalOpen} onClose={() => { setIsUploadModalOpen(false); refetchAllTracks(); refetchLocalAlbums(); }} />
       <AudioPlayer onQueueClick={() => setView('queue')} isQueueActive={view === 'queue'} />
     </div>
   );

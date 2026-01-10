@@ -3,55 +3,18 @@ import { useQuery } from '@tanstack/react-query';
 import { supabase } from '../services/supabase';
 import { useAuthStore } from '../store/authStore';
 import { useMusicStore } from '../store';
-import { Disc, ImageIcon, Loader2, Upload, X, CheckCircle2, AlertCircle } from 'lucide-react';
-import { Album } from '../types'; // Importar a interface Album
-import { useSignedUrl } from '../src/hooks/useSignedUrl'; // Importar o novo hook
+import { Disc, ImageIcon, Loader2 } from 'lucide-react';
+import { Album } from '../types';
+import AlbumItemAdmin from './AlbumItemAdmin'; // Importar o novo componente
 
-interface AlbumManagementProps {}
+interface AlbumManagementProps {
+  onPlayAlbum: (album: Album) => Promise<void>;
+  isAlbumLoading: string | null;
+}
 
-// Componente auxiliar para renderizar o item do álbum com URL assinada
-const AlbumItem: React.FC<{ 
-  album: Album, 
-  isUploadingImage: boolean, 
-  selectedAlbumForUpload: Album | null, 
-  setSelectedAlbumForUpload: (album: Album) => void, 
-  fileInputRef: RefObject<HTMLInputElement> 
-}> = ({ album, isUploadingImage, selectedAlbumForUpload, setSelectedAlbumForUpload, fileInputRef }) => {
-  const signedImageUrl = useSignedUrl(album.image_url, 'images');
-
-  return (
-    <div key={album.id} className="group bg-zinc-900/40 p-4 rounded-3xl hover:bg-zinc-800/60 transition-all cursor-pointer border border-transparent hover:border-white/10 shadow-xl relative">
-      <div className="relative mb-4 aspect-square overflow-hidden rounded-2xl">
-        <img 
-          src={signedImageUrl} 
-          alt={album.name} 
-          className="w-full h-full object-cover shadow-2xl transition-transform duration-700 group-hover:scale-110" 
-          onError={(e) => {
-            // Fallback para imagem genérica se a URL assinada falhar ou a imagem não existir
-            e.currentTarget.src = "https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?w=300";
-          }}
-        />
-        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-          <button 
-            onClick={(e) => { e.stopPropagation(); setSelectedAlbumForUpload(album); fileInputRef.current?.click(); }}
-            disabled={isUploadingImage}
-            className="w-14 h-14 bg-blue-600 rounded-full flex items-center justify-center text-white shadow-2xl transform translate-y-4 group-hover:translate-y-0 transition-all duration-300 active:scale-90 disabled:opacity-50"
-          >
-            {isUploadingImage && selectedAlbumForUpload?.id === album.id ? <Loader2 size={24} className="animate-spin" /> : <ImageIcon size={24} />}
-          </button>
-        </div>
-      </div>
-      <div>
-        <h4 className="font-bold truncate text-sm lg:text-base text-zinc-100">{album.name}</h4>
-        <p className="text-[10px] lg:text-xs text-zinc-500 truncate font-semibold mt-0.5">{album.artist_name}</p>
-      </div>
-    </div>
-  );
-};
-
-const AlbumManagement: React.FC = () => {
+const AlbumManagement: React.FC<AlbumManagementProps> = ({ onPlayAlbum, isAlbumLoading }) => {
   const { currentUser } = useAuthStore();
-  const { addNotification, updateAlbumCover } = useMusicStore(); // Usar updateAlbumCover
+  const { addNotification, updateAlbumCover } = useMusicStore();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [isUploadingImage, setIsUploadingImage] = useState(false);
@@ -63,7 +26,7 @@ const AlbumManagement: React.FC = () => {
       if (!currentUser) return [];
 
       let query = supabase
-        .from('albums') // Buscar da nova tabela 'albums'
+        .from('albums')
         .select('id, name, artist_name, image_url, user_id, created_at');
 
       if (currentUser.role !== 'admin') {
@@ -91,32 +54,31 @@ const AlbumManagement: React.FC = () => {
     
     try {
       const fileExt = file.name.split('.').pop();
-      // Usar o ID do álbum no caminho para garantir unicidade e fácil referência
       const filePath = `${currentUser.id}/album_covers/${selectedAlbumForUpload.id}.${fileExt}`;
 
-      // 1. Upload da nova imagem (sobrescreve se o nome for o mesmo, mas usamos ID para garantir)
+      // 1. Upload da nova imagem
       const { error: uploadError } = await supabase.storage
         .from('images')
         .upload(filePath, file, {
-          upsert: true // Permite sobrescrever se o caminho for o mesmo
+          upsert: true
         });
 
       if (uploadError) throw uploadError;
 
       const { data: { publicUrl } } = supabase.storage.from('images').getPublicUrl(filePath);
 
-      // 2. Atualiza o banco de dados para a tabela 'albums'
+      // 2. Atualiza o banco de dados
       const { error: dbError } = await supabase
         .from('albums')
         .update({ image_url: publicUrl })
-        .eq('id', selectedAlbumForUpload.id); // Atualiza pelo ID do álbum
+        .eq('id', selectedAlbumForUpload.id);
 
       if (dbError) throw dbError;
 
-      // 3. Atualiza o estado global do Zustand para todas as faixas do álbum
-      updateAlbumCover(selectedAlbumForUpload.id, publicUrl); // Usar o ID do álbum
+      // 3. Atualiza o estado global
+      updateAlbumCover(selectedAlbumForUpload.id, publicUrl);
       addNotification('Capa do álbum atualizada com sucesso!', 'success');
-      refetchLocalAlbums(); // Refetch para atualizar a lista de álbuns no componente
+      refetchLocalAlbums();
 
     } catch (error: any) {
       console.error('Erro ao atualizar capa do álbum:', error);
@@ -127,6 +89,10 @@ const AlbumManagement: React.FC = () => {
       if (fileInputRef.current) fileInputRef.current.value = '';
     }
   };
+
+  // Funções dummy para AlbumManagement (já que ele não tem delete/assign)
+  const dummyDelete = () => addNotification("Funcionalidade de exclusão de álbum disponível apenas no Painel Admin.", "info");
+  const dummyAssign = () => addNotification("Funcionalidade de encaminhamento de álbum disponível apenas no Painel Admin.", "info");
 
   return (
     <div className="max-w-7xl mx-auto pt-10 px-4 pb-32 animate-in slide-in-from-bottom-4 duration-500">
@@ -149,13 +115,18 @@ const AlbumManagement: React.FC = () => {
       ) : localAlbums && localAlbums.length > 0 ? (
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
           {localAlbums.map(album => (
-            <AlbumItem 
+            <AlbumItemAdmin 
               key={album.id} 
               album={album} 
               isUploadingImage={isUploadingImage} 
               selectedAlbumForUpload={selectedAlbumForUpload} 
               setSelectedAlbumForUpload={setSelectedAlbumForUpload} 
               fileInputRef={fileInputRef as RefObject<HTMLInputElement>} 
+              onDeleteAlbum={dummyDelete}
+              onAssignAlbum={dummyAssign}
+              onPlayAlbum={onPlayAlbum}
+              showAdminControls={false} // Desativa controles de Admin aqui
+              isAlbumLoading={isAlbumLoading}
             />
           ))}
         </div>

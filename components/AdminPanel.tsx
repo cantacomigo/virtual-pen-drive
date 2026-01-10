@@ -1,20 +1,21 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef, RefObject } from 'react';
 import { 
   Users, Music, Trash2, Shield, ShieldAlert, UserPlus, Search, 
   BarChart3, Camera, Crown, RefreshCw, X, Check, Edit2, Loader2,
   Mail, Key, ShieldCheck, User as UserIcon, Calendar, ArrowRight,
   MessageSquare, Forward, CheckCircle, Upload, Copy, Tag, Disc, LayoutGrid,
-  Send
+  Send, ImageIcon
 } from 'lucide-react';
 import { useAuthStore, User } from '../store/authStore';
 import { useMusicStore } from '../store';
 import { supabase } from '../services/supabase';
 import { MusicRequest, JamendoTrack, Album } from '../types';
-import AssignAlbumModal from './AssignAlbumModal'; // Importar o novo modal
+import AssignAlbumModal from './AssignAlbumModal';
+import AlbumItemAdmin from './AlbumItemAdmin'; // Importar o novo componente
 
 const AdminPanel: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'users' | 'music' | 'requests'>('users');
-  const [activeMusicSubTab, setActiveMusicSubTab] = useState<'albums' | 'tracks'>('albums'); // Novo estado para sub-aba
+  const [activeMusicSubTab, setActiveMusicSubTab] = useState<'albums' | 'tracks'>('albums');
   const [searchTerm, setSearchTerm] = useState('');
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
@@ -31,12 +32,18 @@ const AdminPanel: React.FC = () => {
   const [isLoadingLibrary, setIsLoadingLibrary] = useState(false);
 
   // Admin Albums State
-  const [adminAlbums, setAdminAlbums] = useState<Album[]>([]); // Novo estado para álbuns
-  const [isLoadingAlbums, setIsLoadingAlbums] = useState(false); // Novo estado de loading para álbuns
-  const [assigningAlbum, setAssigningAlbum] = useState<Album | null>(null); // Álbum sendo encaminhado
+  const [adminAlbums, setAdminAlbums] = useState<Album[]>([]);
+  const [isLoadingAlbums, setIsLoadingAlbums] = useState(false);
+  const [assigningAlbum, setAssigningAlbum] = useState<Album | null>(null);
+  
+  // Album Cover Upload State
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isUploadingImage, setIsUploadingImage] = useState(false);
+  const [selectedAlbumForUpload, setSelectedAlbumForUpload] = useState<Album | null>(null);
+  const [isAlbumLoading, setIsAlbumLoading] = useState<string | null>(null); // Para o botão de play
 
   const { users, deleteUser, toggleUserRole, updatePlan, currentUser, fetchUsers, updateProfile, register } = useAuthStore();
-  const { removeUploadedTrack, addNotification } = useMusicStore();
+  const { removeUploadedTrack, addNotification, updateAlbumCover, setQueue, setCurrentTrack } = useMusicStore();
 
   const RLS_SQL = `-- CRITICAL SECURITY AND PERMISSIONS SETUP
 -- Run this entire block in Supabase SQL Editor to fix "policy violation" errors.
@@ -218,7 +225,7 @@ USING (auth.uid() = user_id OR auth.uid() IN (SELECT id FROM public.profiles WHE
     if (!confirm(`Tem certeza que deseja deletar a faixa '${track.name}'?`)) return;
     try {
       // 1. Delete from Storage
-      const path = track.audio.split('/storage/v1/object/audio/')[1];
+      const path = track.audio.split('/storage/v1/object/public/audio/')[1];
       if (path) {
         const { error: storageError } = await supabase.storage.from('audio').remove([path]);
         if (storageError) console.warn("Erro ao deletar do Storage (pode ser arquivo externo):", storageError);
@@ -242,7 +249,7 @@ USING (auth.uid() = user_id OR auth.uid() IN (SELECT id FROM public.profiles WHE
     try {
       // 1. Delete tracks from Storage (optional, but good practice)
       const tracksToDelete = adminLibrary.filter(t => t.album_id === album.id);
-      const paths = tracksToDelete.map(t => t.audio.split('/storage/v1/object/audio/')[1]).filter(p => p);
+      const paths = tracksToDelete.map(t => t.audio.split('/storage/v1/object/public/audio/')[1]).filter(p => p);
       if (paths.length > 0) {
         await supabase.storage.from('audio').remove(paths);
       }
@@ -354,6 +361,98 @@ USING (auth.uid() = user_id OR auth.uid() IN (SELECT id FROM public.profiles WHE
   const getStatusColor = (status: 'pending' | 'completed') => {
     return status === 'completed' ? 'bg-green-500/10 text-green-400 border-green-500/20' : 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20';
   };
+
+  const handleImageChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !selectedAlbumForUpload || !currentUser) return;
+
+    setIsUploadingImage(true);
+    
+    try {
+      const fileExt = file.name.split('.').pop();
+      const filePath = `${selectedAlbumForUpload.user_id}/album_covers/${selectedAlbumForUpload.id}.${fileExt}`; // Usa o ID do proprietário original
+
+      // 1. Upload da nova imagem
+      const { error: uploadError } = await supabase.storage
+        .from('images')
+        .upload(filePath, file, {
+          upsert: true
+        });
+
+      if (uploadError) throw uploadError;
+
+      const { data: { publicUrl } } = supabase.storage.from('images').getPublicUrl(filePath);
+
+      // 2. Atualiza o banco de dados
+      const { error: dbError } = await supabase
+        .from('albums')
+        .update({ image_url: publicUrl })
+        .eq('id', selectedAlbumForUpload.id);
+
+      if (dbError) throw dbError;
+
+      // 3. Atualiza o estado global e local
+      updateAlbumCover(selectedAlbumForUpload.id, publicUrl);
+      await fetchAdminAlbums(); // Refetch para atualizar a lista de álbuns no componente
+      addNotification('Capa do álbum atualizada com sucesso!', 'success');
+
+    } catch (error: any) {
+      console.error('Erro ao atualizar capa do álbum:', error);
+      addNotification(`Erro ao atualizar capa: ${error.message || 'Erro desconhecido'}`, 'error');
+    } finally {
+      setIsUploadingImage(false);
+      setSelectedAlbumForUpload(null);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  const handleAlbumPlay = async (album: Album) => {
+    if (!album || !currentUser) return;
+    try {
+      setIsAlbumLoading(album.id);
+      
+      const { data, error } = await supabase
+        .from('tracks')
+        .select(`
+          id, name, artist_name, album_name, audio_url, format, duration, created_at, genre, year, track_image,
+          album_id,
+          albums(image_url)
+        `)
+        .eq('album_id', album.id)
+        .order('created_at', { ascending: true });
+          
+      if (error) throw error;
+      
+      const tracks: JamendoTrack[] = data.map((t: any) => ({
+        id: t.id,
+        name: t.name,
+        artist_name: t.artist_name,
+        album_id: t.album_id,
+        album_name: t.album_name,
+        album_image: t.albums?.image_url || "https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?w=300",
+        track_image: t.track_image || t.albums?.image_url || "https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?w=300",
+        audio: t.audio_url,
+        audiodownload: t.audio_url,
+        duration: t.duration || 0,
+        format: t.format || 'mp3',
+        genre: t.genre,
+        year: t.year,
+        artist_id: 'local-artist',
+        isLocal: true
+      }));
+
+      if (tracks && tracks.length > 0) {
+        setQueue(tracks);
+        setCurrentTrack(tracks[0]);
+        addNotification(`Tocando álbum: ${album.name}`);
+      }
+    } catch (error) {
+      console.error("Erro ao carregar álbum:", error);
+    } finally {
+      setIsAlbumLoading(null);
+    }
+  };
+
 
   if (currentUser?.role !== 'admin') {
     return (
@@ -471,26 +570,22 @@ USING (auth.uid() = user_id OR auth.uid() IN (SELECT id FROM public.profiles WHE
               {isLoadingAlbums ? (
                 <div className="flex justify-center py-10"><Loader2 className="animate-spin text-blue-500" /></div>
               ) : (
-                <div className="space-y-3">
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
                   {filteredAlbums.map(album => (
-                    <div key={album.id} className="bg-zinc-950/50 p-4 rounded-2xl flex items-center justify-between border border-zinc-800 hover:border-blue-500/30 transition-all">
-                      <div className="flex items-center gap-4 min-w-0 flex-1">
-                        <img src={album.image_url} className="w-12 h-12 rounded-lg object-cover shrink-0" />
-                        <div className="min-w-0">
-                          <p className="font-bold text-sm truncate">{album.name}</p>
-                          <p className="text-xs text-zinc-500 truncate">{album.artist_name}</p>
-                          <p className="text-[10px] text-zinc-600">Proprietário: {users.find(u => u.id === album.user_id)?.name || 'Desconhecido'}</p>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-4 shrink-0">
-                        <button onClick={() => setAssigningAlbum(album)} className="p-2 text-zinc-500 hover:text-green-400 transition-colors" title="Encaminhar Álbum">
-                          <Forward size={18} />
-                        </button>
-                        <button onClick={() => handleDeleteAlbum(album)} className="p-2 text-zinc-500 hover:text-red-500 transition-colors" title="Deletar Álbum">
-                          <Trash2 size={18} />
-                        </button>
-                      </div>
-                    </div>
+                    <AlbumItemAdmin 
+                      key={album.id} 
+                      album={album} 
+                      isUploadingImage={isUploadingImage} 
+                      selectedAlbumForUpload={selectedAlbumForUpload} 
+                      setSelectedAlbumForUpload={setSelectedAlbumForUpload} 
+                      fileInputRef={fileInputRef as RefObject<HTMLInputElement>} 
+                      onDeleteAlbum={handleDeleteAlbum}
+                      onAssignAlbum={() => setAssigningAlbum(album)}
+                      onPlayAlbum={handleAlbumPlay}
+                      showAdminControls={true}
+                      isAlbumLoading={isAlbumLoading}
+                      ownerName={users.find(u => u.id === album.user_id)?.name || 'Desconhecido'}
+                    />
                   ))}
                 </div>
               )}
@@ -625,6 +720,15 @@ USING (auth.uid() = user_id OR auth.uid() IN (SELECT id FROM public.profiles WHE
         onClose={() => setAssigningAlbum(null)}
         album={assigningAlbum}
         onAssignAlbum={handleAssignAlbum}
+      />
+      
+      {/* Input de arquivo oculto para upload de capa */}
+      <input
+        type="file"
+        accept="image/*"
+        className="hidden"
+        ref={fileInputRef}
+        onChange={handleImageChange}
       />
     </div>
   );
