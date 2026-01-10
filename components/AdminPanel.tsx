@@ -305,9 +305,9 @@ USING (auth.uid() = user_id OR auth.uid() IN (SELECT id FROM public.profiles WHE
 
   const handleUpdateUserPlan = async (userId: string, currentPlan: 'free' | 'premium') => {
     const newPlan = currentPlan === 'free' ? 'premium' : 'free';
-    // Correção 1: Garante que subscriptionType seja uma string literal válida ou null/undefined
+    // Correção: subscriptionType é opcional e será undefined para 'free'
     const subscriptionType = newPlan === 'premium' ? 'Individual' : undefined;
-    await updatePlan(userId, newPlan, subscriptionType as 'Individual' | 'Duo' | 'Família' | undefined);
+    await updatePlan(userId, newPlan, subscriptionType);
     addNotification(`Plano do usuário atualizado para ${newPlan.toUpperCase()}!`, 'success');
   };
 

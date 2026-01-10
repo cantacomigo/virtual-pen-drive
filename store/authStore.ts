@@ -26,7 +26,7 @@ interface AuthState {
   fetchUsers: () => Promise<void>;
   deleteUser: (id: string) => Promise<void>;
   toggleUserRole: (id: string) => Promise<void>;
-  updatePlan: (userId: string, plan: 'free' | 'premium', subscriptionType: 'Individual' | 'Duo' | 'Família') => Promise<void>;
+  updatePlan: (userId: string, plan: 'free' | 'premium', subscriptionType?: 'Individual' | 'Duo' | 'Família') => Promise<void>;
   updateProfile: (name: string, userId?: string) => Promise<{ success: boolean; message: string }>;
 }
 
@@ -296,9 +296,12 @@ export const useAuthStore = create<AuthState>()(
       },
 
       updatePlan: async (userId, plan, subscriptionType) => {
+        // Se subscriptionType for undefined (plano free), salva como null no DB
+        const dbSubscriptionType = subscriptionType || null;
+        
         const { error } = await supabase
           .from('profiles')
-          .update({ plan, subscriptionType })
+          .update({ plan, subscriptionType: dbSubscriptionType })
           .eq('id', userId);
           
         if (!error) {
