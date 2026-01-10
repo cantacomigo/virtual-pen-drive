@@ -27,6 +27,7 @@ const AlbumItem: React.FC<{
           alt={album.name} 
           className="w-full h-full object-cover shadow-2xl transition-transform duration-700 group-hover:scale-110" 
           onError={(e) => {
+            // Fallback para imagem genérica se a URL assinada falhar ou a imagem não existir
             e.currentTarget.src = "https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?w=300";
           }}
         />
@@ -90,17 +91,21 @@ const AlbumManagement: React.FC = () => {
     
     try {
       const fileExt = file.name.split('.').pop();
-      const filePath = `${currentUser.id}/album_covers/${selectedAlbumForUpload.name}-${Date.now()}.${fileExt}`;
+      // Usar o ID do álbum no caminho para garantir unicidade e fácil referência
+      const filePath = `${currentUser.id}/album_covers/${selectedAlbumForUpload.id}.${fileExt}`;
 
+      // 1. Upload da nova imagem (sobrescreve se o nome for o mesmo, mas usamos ID para garantir)
       const { error: uploadError } = await supabase.storage
         .from('images')
-        .upload(filePath, file);
+        .upload(filePath, file, {
+          upsert: true // Permite sobrescrever se o caminho for o mesmo
+        });
 
       if (uploadError) throw uploadError;
 
       const { data: { publicUrl } } = supabase.storage.from('images').getPublicUrl(filePath);
 
-      // Atualiza o banco de dados para a tabela 'albums'
+      // 2. Atualiza o banco de dados para a tabela 'albums'
       const { error: dbError } = await supabase
         .from('albums')
         .update({ image_url: publicUrl })
@@ -108,7 +113,7 @@ const AlbumManagement: React.FC = () => {
 
       if (dbError) throw dbError;
 
-      // Atualiza o estado global do Zustand para todas as faixas do álbum
+      // 3. Atualiza o estado global do Zustand para todas as faixas do álbum
       updateAlbumCover(selectedAlbumForUpload.id, publicUrl); // Usar o ID do álbum
       addNotification('Capa do álbum atualizada com sucesso!', 'success');
       refetchLocalAlbums(); // Refetch para atualizar a lista de álbuns no componente

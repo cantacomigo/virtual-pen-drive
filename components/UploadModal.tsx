@@ -249,8 +249,11 @@ const UploadModal: React.FC<UploadModalProps> = ({ isOpen, onClose }) => {
           let uploadedAlbumCoverUrl = defaultCoverUrl;
           if (track.coverFile) {
             const coverExt = track.coverFile.type.split('/')[1] || 'jpg';
-            const coverPath = `${currentUser.id}/album_covers/${cleanAlbum}-${Date.now()}.${coverExt}`;
-            const { error: coverUploadError } = await supabase.storage.from('images').upload(coverPath, track.coverFile);
+            // Usar o ID do usuário e o nome do álbum para o caminho
+            const coverPath = `${currentUser.id}/album_covers/${cleanAlbum}.${coverExt}`;
+            
+            // Usar upsert: true para garantir que, se o álbum for criado com o mesmo nome novamente, a capa seja atualizada
+            const { error: coverUploadError } = await supabase.storage.from('images').upload(coverPath, track.coverFile, { upsert: true });
             if (!coverUploadError) {
               uploadedAlbumCoverUrl = supabase.storage.from('images').getPublicUrl(coverPath).data.publicUrl;
             }
