@@ -7,6 +7,7 @@ import { JamendoTrack } from '../types';
 import { useMusicStore } from '../store';
 import { useAuthStore } from '../store/authStore';
 import { supabase } from '../services/supabase';
+import { useSignedUrl } from '../src/hooks/useSignedUrl'; // Importar o novo hook
 
 interface TrackItemProps {
   track: JamendoTrack & { playlistContextId?: string };
@@ -36,7 +37,10 @@ const TrackItem: React.FC<TrackItemProps> = ({ track, index }) => {
   const isPremium = currentUser?.plan === 'premium';
   
   // Determina qual imagem usar: track_image se existir, senão album_image
-  const displayImage = track.track_image || track.album_image;
+  const rawDisplayImage = track.track_image || track.album_image;
+
+  // *** USAR HOOK PARA OBTER URL ASSINADA ***
+  const displayImage = useSignedUrl(rawDisplayImage, 'images');
 
   const handlePlayClick = () => {
     if (isCurrent) togglePlay();
@@ -56,6 +60,7 @@ const TrackItem: React.FC<TrackItemProps> = ({ track, index }) => {
       setIsDownloading(true);
       addNotification(`Iniciando download...`, 'info');
       
+      // O audiodownload já deve ser a URL assinada ou a URL pública (se for Jamendo)
       const response = await fetch(track.audiodownload);
       if (!response.ok) throw new Error('Falha ao obter arquivo do servidor');
       
@@ -106,7 +111,15 @@ const TrackItem: React.FC<TrackItemProps> = ({ track, index }) => {
       </div>
 
       <div className="relative shrink-0 mx-2" onClick={handlePlayClick}>
-        <img src={displayImage} alt={track.name} className="w-11 h-11 rounded-lg object-cover shadow-lg" />
+        <img 
+          src={displayImage} 
+          alt={track.name} 
+          className="w-11 h-11 rounded-lg object-cover shadow-lg" 
+          onError={(e) => {
+            // Fallback para imagem genérica se a URL assinada falhar
+            e.currentTarget.src = "https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?w=300";
+          }}
+        />
         <div className={`absolute inset-0 bg-black/40 flex items-center justify-center rounded-lg lg:opacity-0 lg:group-hover:opacity-100 transition-opacity ${isCurrent ? 'opacity-100' : 'opacity-0'}`}>
           {isCurrent && isPlaying ? <Pause size={18} fill="white" /> : <Play size={18} fill="white" />}
         </div>
