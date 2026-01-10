@@ -1,5 +1,5 @@
-import { supabase } from '../services/supabase';
-import { useAuthStore } from '../store/authStore';
+import { supabase } from '../../services/supabase';
+import { useAuthStore } from '../../store/authStore';
 
 /**
  * Gera uma URL assinada (Signed URL) para acessar um arquivo privado no Supabase Storage.
