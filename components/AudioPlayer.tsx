@@ -8,6 +8,7 @@ import { useMusicStore } from '../store';
 import { useAuthStore } from '../store/authStore';
 import { supabase } from '../services/supabase';
 import Visualizer from './Visualizer';
+import { getSignedUrl, extractStoragePath } from '../utils/storage'; // Importar utilitários
 
 const FREE_PLAYBACK_LIMIT = 50;
 
@@ -80,52 +81,72 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({ onQueueClick, isQueueActive }
     cleanup();
     setIsBuffering(true);
 
-    console.log("Attempting to play:", currentTrack.name, "from URL:", currentTrack.audio); // LOG ADICIONADO
-
-    const sound = new Howl({
-      src: [currentTrack.audio],
-      html5: true, 
-      preload: true,
-      format: ['mp3', 'wav', 'ogg'],
-      volume: isMuted ? 0 : volume,
-      onplay: () => {
-        console.log("Howler: onplay triggered"); // LOG ADICIONADO
-        setIsBuffering(false);
-        setPlaying(true);
-        const d = sound.duration();
-        if (d > 0) setDuration(d);
-        updatePosition();
-        if (!isPremium) incrementPlaybackCount();
-      },
-      onload: () => {
-        console.log("Howler: onload triggered, duration:", sound.duration()); // LOG ADICIONADO
-        setIsBuffering(false);
-        const d = sound.duration();
-        if (d > 0) {
-          setDuration(d);
-          if (currentTrack.id && (!currentTrack.duration)) syncDurationToDb(currentTrack.id, d);
+    const loadAudio = async () => {
+      let audioSource = currentTrack.audio;
+      
+      // Se for uma faixa local, assumimos que está no bucket 'audio' e precisa de URL assinada
+      if (currentTrack.isLocal) {
+        const path = extractStoragePath(currentTrack.audio, 'audio');
+        const signedUrl = await getSignedUrl(path, 'audio', 3600); // 1 hora de validade
+        
+        if (!signedUrl) {
+          console.error("Falha ao obter URL assinada. Pulando faixa.");
+          setIsBuffering(false);
+          playNext();
+          return;
         }
-      },
-      onplayerror: (id, error) => {
-        console.error("Howler: onplayerror triggered for ID:", id, "Error:", error); // LOG ADICIONADO
-        setIsBuffering(false);
-        playNext();
-      },
-      onloaderror: (id, error) => { // NOVO MANIPULADOR DE ERRO
-        console.error("Howler: onloaderror triggered for ID:", id, "Error:", error);
-        setIsBuffering(false);
-        playNext(); // Tenta a próxima música na fila
-      },
-      onend: () => {
-        console.log("Howler: onend triggered"); // LOG ADICIONADO
-        const currentRepeat = useMusicStore.getState().repeat;
-        if (currentRepeat === 'one') sound.play();
-        else playNext();
+        audioSource = signedUrl;
       }
-    });
 
-    soundRef.current = sound;
-    if (isPlaying) sound.play();
+      console.log("Attempting to play:", currentTrack.name, "from URL:", audioSource);
+
+      const sound = new Howl({
+        src: [audioSource],
+        html5: true, 
+        preload: true,
+        format: ['mp3', 'wav', 'ogg'],
+        volume: isMuted ? 0 : volume,
+        onplay: () => {
+          console.log("Howler: onplay triggered");
+          setIsBuffering(false);
+          setPlaying(true);
+          const d = sound.duration();
+          if (d > 0) setDuration(d);
+          updatePosition();
+          if (!isPremium) incrementPlaybackCount();
+        },
+        onload: () => {
+          console.log("Howler: onload triggered, duration:", sound.duration());
+          setIsBuffering(false);
+          const d = sound.duration();
+          if (d > 0) {
+            setDuration(d);
+            if (currentTrack.id && (!currentTrack.duration)) syncDurationToDb(currentTrack.id, d);
+          }
+        },
+        onplayerror: (id, error) => {
+          console.error("Howler: onplayerror triggered for ID:", id, "Error:", error);
+          setIsBuffering(false);
+          playNext();
+        },
+        onloaderror: (id, error) => {
+          console.error("Howler: onloaderror triggered for ID:", id, "Error:", error);
+          setIsBuffering(false);
+          playNext();
+        },
+        onend: () => {
+          console.log("Howler: onend triggered");
+          const currentRepeat = useMusicStore.getState().repeat;
+          if (currentRepeat === 'one') sound.play();
+          else playNext();
+        }
+      });
+
+      soundRef.current = sound;
+      if (isPlaying) sound.play();
+    };
+
+    loadAudio();
 
     return cleanup;
   }, [currentTrack?.id, cleanup, syncDurationToDb, updatePosition, playNext, hasReachedLimit, isPremium, incrementPlaybackCount]);
