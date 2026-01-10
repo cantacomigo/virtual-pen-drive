@@ -154,7 +154,7 @@ const UploadModal: React.FC<UploadModalProps> = ({ isOpen, onClose }) => {
   const removeTrack = (id: string) => {
     setPendingTracks(prev => {
       const track = prev.find(t => t.id === id);
-      if (track && track.coverPreview) URL.revokeObjectURL(track.coverPreview);
+      if (track && track.coverPreview) URL.revokeObjectURL(track.coverPreview); // Revoga URL de preview
       return prev.filter(t => t.id !== id);
     });
   };
@@ -423,7 +423,7 @@ const UploadModal: React.FC<UploadModalProps> = ({ isOpen, onClose }) => {
                       </h4>
                       <button onClick={() => setShowBatchEdit(false)} className="text-zinc-500 hover:text-white"><X size={14}/></button>
                    </div>
-                   <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
+                   <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-3">
                       <input 
                         placeholder="Artista Global..." 
                         value={batchForm.artist}
@@ -434,19 +434,19 @@ const UploadModal: React.FC<UploadModalProps> = ({ isOpen, onClose }) => {
                         placeholder="Nome do Álbum..." 
                         value={batchForm.album}
                         onChange={e => setBatchForm({...batchForm, album: e.target.value})}
-                        className="bg-black/50 border border-zinc-700 rounded-lg px-3 py-2 text-xs text-white focus:border-blue-500 outline-none"
+                        className="w-full bg-black/50 border border-zinc-700 rounded-lg px-3 py-2 text-xs text-white focus:border-blue-500 outline-none"
                       />
                       <input 
                         placeholder="Gênero..." 
                         value={batchForm.genre}
                         onChange={e => setBatchForm({...batchForm, genre: e.target.value})}
-                        className="bg-black/50 border border-zinc-700 rounded-lg px-3 py-2 text-xs text-white focus:border-blue-500 outline-none"
+                        className="w-full bg-black/50 border border-zinc-700 rounded-lg px-3 py-2 text-xs text-white focus:border-blue-500 outline-none"
                       />
                       <input 
                         placeholder="Ano..." 
                         value={batchForm.year}
                         onChange={e => setBatchForm({...batchForm, year: e.target.value})}
-                        className="bg-black/50 border border-zinc-700 rounded-lg px-3 py-2 text-xs text-white focus:border-blue-500 outline-none"
+                        className="w-full bg-black/50 border border-zinc-700 rounded-lg px-3 py-2 text-xs text-white focus:border-blue-500 outline-none"
                       />
                    </div>
                    <button 

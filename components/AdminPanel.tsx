@@ -194,6 +194,110 @@ CREATE POLICY "Admins can delete albums" ON public.albums FOR DELETE TO authenti
     fetchAdminAlbums(); // Chamar a nova função de busca de álbuns
   }, [currentUser]);
 
+  // --- LÓGICA DE EXCLUSÃO ---
+  const deleteTrack = async (track: JamendoTrack) => {
+    if (!currentUser || !track.audio) return;
+    
+    addNotification(`Excluindo faixa: ${track.name}...`, 'info');
+
+    try {
+      // 1. Extrair o caminho do arquivo de áudio do URL
+      // Ex: 'https://.../storage/v1/object/public/audio/user_id/filename.mp3' -> 'user_id/filename.mp3'
+      const pathSegments = track.audio.split('/public/audio/');
+      if (pathSegments.length < 2) throw new Error("URL de áudio inválida.");
+      const audioPath = pathSegments[1];
+
+      // 2. Remover o arquivo de áudio do Storage
+      const { error: storageError } = await supabase.storage
+        .from('audio')
+        .remove([audioPath]);
+
+      if (storageError && storageError.message !== 'The resource was not found') {
+        // Ignoramos se o arquivo já não existe, mas lançamos outros erros
+        throw storageError;
+      }
+
+      // 3. Remover a entrada da faixa do banco de dados
+      const { error: dbError } = await supabase
+        .from('tracks')
+        .delete()
+        .eq('id', track.id);
+
+      if (dbError) throw dbError;
+
+      // 4. Atualizar estados locais
+      removeUploadedTrack(track.id); // Remove do store global (uploadedTracks)
+      setAdminLibrary(prev => prev.filter(t => t.id !== track.id)); // Remove do estado do Admin Panel
+      addNotification(`Faixa "${track.name}" excluída com sucesso!`);
+
+    } catch (err: any) {
+      console.error('Erro ao excluir faixa:', err);
+      addNotification(`Falha ao excluir faixa: ${err.message}`, 'error');
+    }
+  };
+
+  const deleteAlbum = async (album: Album) => {
+    if (!currentUser) return;
+    
+    addNotification(`Excluindo álbum: ${album.name} e todas as faixas associadas...`, 'info');
+
+    try {
+      // 1. Buscar todas as faixas associadas para remover os arquivos de áudio
+      const { data: tracksToDelete, error: fetchError } = await supabase
+        .from('tracks')
+        .select('id, audio_url')
+        .eq('album_id', album.id);
+
+      if (fetchError) throw fetchError;
+
+      const audioPaths: string[] = [];
+      tracksToDelete?.forEach(t => {
+        const pathSegments = t.audio_url.split('/public/audio/');
+        if (pathSegments.length > 1) {
+          audioPaths.push(pathSegments[1]);
+        }
+      });
+
+      // 2. Remover arquivos de áudio em lote
+      if (audioPaths.length > 0) {
+        const { error: storageError } = await supabase.storage
+          .from('audio')
+          .remove(audioPaths);
+        
+        if (storageError && storageError.message !== 'The resource was not found') {
+          console.warn("Aviso: Falha parcial ao remover arquivos de áudio do Storage.", storageError);
+        }
+      }
+
+      // 3. Remover a entrada do álbum (isso deve cascatear e remover as faixas da tabela 'tracks' devido ao ON DELETE CASCADE)
+      const { error: dbError } = await supabase
+        .from('albums')
+        .delete()
+        .eq('id', album.id);
+
+      if (dbError) throw dbError;
+
+      // 4. Remover a capa do álbum (opcional, mas boa prática)
+      if (album.image_url && !album.image_url.includes('unsplash')) {
+         const imagePathSegments = album.image_url.split('/public/images/');
+         if (imagePathSegments.length > 1) {
+            await supabase.storage.from('images').remove([imagePathSegments[1]]);
+         }
+      }
+
+      // 5. Atualizar estados locais
+      setAdminAlbums(prev => prev.filter(a => a.id !== album.id));
+      // O App.tsx fará o refetch das faixas, mas podemos limpar o adminLibrary para feedback imediato
+      setAdminLibrary(prev => prev.filter(t => t.album_id !== album.id)); 
+      addNotification(`Álbum "${album.name}" e ${tracksToDelete?.length || 0} faixas excluídos!`);
+
+    } catch (err: any) {
+      console.error('Erro ao excluir álbum:', err);
+      addNotification(`Falha ao excluir álbum: ${err.message}`, 'error');
+    }
+  };
+  // --- FIM LÓGICA DE EXCLUSÃO ---
+
   const handleFulfillWithTrack = async (track: JamendoTrack) => {
     if (!fulfillingRequest) return;
     
@@ -1086,7 +1190,7 @@ CREATE POLICY "Admins can delete albums" ON public.albums FOR DELETE TO authenti
                         <button onClick={() => setAssigningAlbum(album)} className="p-2.5 bg-zinc-800/50 hover:bg-green-600 hover:text-white rounded-xl text-zinc-400 transition-all opacity-0 group-hover/album:opacity-100" title="Encaminhar álbum para usuário">
                           <Forward size={16} />
                         </button>
-                        <button onClick={() => { if (confirm(`Excluir álbum "${album.name}" e todas as suas faixas?`)) { /* Lógica de exclusão de álbum */ } }} className="p-2.5 bg-zinc-800/50 hover:bg-red-500 hover:text-white rounded-xl text-zinc-400 transition-all opacity-0 group-hover/album:opacity-100"><Trash2 size={16} /></button>
+                        <button onClick={() => { if (confirm(`Excluir álbum "${album.name}" e todas as suas faixas?`)) deleteAlbum(album); }} className="p-2.5 bg-zinc-800/50 hover:bg-red-500 hover:text-white rounded-xl text-zinc-400 transition-all opacity-0 group-hover/album:opacity-100"><Trash2 size={16} /></button>
                       </div>
                     </td>
                   </tr>
@@ -1116,7 +1220,7 @@ CREATE POLICY "Admins can delete albums" ON public.albums FOR DELETE TO authenti
                         <button onClick={() => setAssigningTrack(track)} className="p-2.5 bg-zinc-800/50 hover:bg-green-600 hover:text-white rounded-xl text-zinc-400 transition-all opacity-0 group-hover/track:opacity-100" title="Encaminhar para usuário">
                           <Forward size={16} />
                         </button>
-                        <button onClick={() => { if (confirm(`Excluir "${track.name}"?`)) removeUploadedTrack(track.id); }} className="p-2.5 bg-zinc-800/50 hover:bg-red-500 hover:text-white rounded-xl text-zinc-400 transition-all opacity-0 group-hover/track:opacity-100"><Trash2 size={16} /></button>
+                        <button onClick={() => { if (confirm(`Excluir "${track.name}"?`)) deleteTrack(track); }} className="p-2.5 bg-zinc-800/50 hover:bg-red-500 hover:text-white rounded-xl text-zinc-400 transition-all opacity-0 group-hover/track:opacity-100"><Trash2 size={16} /></button>
                       </div>
                     </td>
                   </tr>
