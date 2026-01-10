@@ -38,6 +38,13 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({ onQueueClick, isQueueActive }
   const isPremium = currentUser?.plan === 'premium';
   const hasReachedLimit = !isPremium && playbackCount >= FREE_PLAYBACK_LIMIT;
 
+  // Determine the image URL early, passing undefined if no track is playing
+  const rawDisplayImage = currentTrack ? (currentTrack.track_image || currentTrack.album_image) : undefined;
+  
+  // *** USAR HOOK PARA OBTER URL ASSINADA ***
+  // HOOKS MUST BE CALLED UNCONDITIONALLY AT THE TOP LEVEL
+  const displayImage = useSignedUrl(rawDisplayImage, 'images');
+
   const cleanup = useCallback(() => {
     if (soundRef.current) {
       soundRef.current.off(); 
@@ -180,10 +187,8 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({ onQueueClick, isQueueActive }
   if (!currentTrack) return null;
 
   const isLiked = likedTracks.some(t => t && t.id === currentTrack.id);
-  const rawDisplayImage = currentTrack.track_image || currentTrack.album_image;
   
-  // *** USAR HOOK PARA OBTER URL ASSINADA ***
-  const displayImage = useSignedUrl(rawDisplayImage, 'images');
+  // rawDisplayImage and displayImage are now defined above the conditional return
 
   return (
     <>
